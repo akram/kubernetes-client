@@ -22,6 +22,7 @@ import java.util.function.Predicate;
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watcher;
+import io.fabric8.kubernetes.client.WatcherException;
 
 public class WaitForConditionWatcher<T extends HasMetadata> implements Watcher<T> {
 
@@ -62,12 +63,21 @@ public class WaitForConditionWatcher<T extends HasMetadata> implements Watcher<T
     future.completeExceptionally(new WatchException("Watcher closed", cause));
   }
 
+  @Override
+  public void onClose(WatcherException cause) {
+    future.completeExceptionally(new WatchException("Watcher closed", cause));
+  }
+  
   public static class WatchException extends Exception {
 
     public WatchException(String message, KubernetesClientException cause) {
       super(message, cause);
     }
 
+    public WatchException(String message, WatcherException cause) {
+        super(message, cause);
+    }
+    
     public WatchException(String message) {
       super(message);
     }

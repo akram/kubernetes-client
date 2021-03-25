@@ -23,6 +23,7 @@ import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.KubernetesClientTimeoutException;
 import io.fabric8.kubernetes.client.Watcher;
+import io.fabric8.kubernetes.client.WatcherException;
 
 public class ReadinessWatcher<T extends HasMetadata> implements Watcher<T> {
 
@@ -53,6 +54,12 @@ public class ReadinessWatcher<T extends HasMetadata> implements Watcher<T> {
 
   }
 
+  
+  @Override
+  public void onClose(WatcherException e) {
+
+  }
+  
   public T await(long amount, TimeUnit timeUnit) {
     try {
       if (latch.await(amount, timeUnit)) {

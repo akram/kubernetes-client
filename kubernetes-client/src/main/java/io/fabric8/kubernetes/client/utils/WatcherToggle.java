@@ -1,4 +1,5 @@
 /**
+
  * Copyright (C) 2015 Red Hat, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +19,7 @@ package io.fabric8.kubernetes.client.utils;
 
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watcher;
+import io.fabric8.kubernetes.client.WatcherException;
 
 import java.util.Objects;
 
@@ -56,4 +58,13 @@ public class WatcherToggle<T> implements Watcher<T> {
       delegate.onClose(cause);
     }
   }
+
+  @Override
+  public void onClose(WatcherException cause) {
+    if (enabled) {
+      delegate.onClose(cause);
+    }
+  }
+
+
 }

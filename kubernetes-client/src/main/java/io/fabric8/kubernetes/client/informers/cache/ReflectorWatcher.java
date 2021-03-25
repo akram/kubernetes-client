@@ -19,6 +19,8 @@ import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.Status;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watcher;
+import io.fabric8.kubernetes.client.WatcherException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -84,4 +86,24 @@ public class ReflectorWatcher<T extends HasMetadata> implements Watcher<T> {
     onClose.run();
   }
 
+  @Override
+  public void onClose(WatcherException exception) {
+    log.error("Watch closing");
+    Optional.ofNullable(exception)
+      .map(e -> {
+        log.debug("Exception received during watch", e);
+        return exception;
+      })
+      .filter(WatcherException::isHttpGone)
+      .ifPresent(c -> onHttpGone.run());
+    onClose.run();
+  }
+
+  @Override
+  public void onClose() {
+    log.info("Watch gracefully closed");
+    onClose.run();
+  }
+  
+  
 }

@@ -15,6 +15,8 @@
  */
 package io.fabric8.kubernetes.client;
 
+import org.slf4j.LoggerFactory;
+
 public interface Watcher<T> {
 
   void eventReceived(Action action, T resource);
@@ -26,6 +28,17 @@ public interface Watcher<T> {
    */
   void onClose(KubernetesClientException cause);
 
+  
+  void onClose(WatcherException cause);
+  
+  
+  /**
+   * Invoked when the watcher is gracefully closed.
+   */
+  default void onClose() {
+    LoggerFactory.getLogger(Watcher.class).debug("Watcher closed");
+  }
+  
   enum Action {
     ADDED, MODIFIED, DELETED, ERROR
   }
