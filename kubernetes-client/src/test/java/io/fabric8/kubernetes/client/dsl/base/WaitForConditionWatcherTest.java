@@ -15,6 +15,7 @@
  */
 package io.fabric8.kubernetes.client.dsl.base;
 
+import static java.net.HttpURLConnection.HTTP_GONE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -26,13 +27,13 @@ import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.function.Predicate;
 
+import io.fabric8.kubernetes.client.WatcherException;
 import org.junit.jupiter.api.Test;
 
 import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.ConfigMapBuilder;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watcher.Action;
-import io.fabric8.kubernetes.client.dsl.base.WaitForConditionWatcher.WatchException;
 
 class WaitForConditionWatcherTest {
 
@@ -51,7 +52,7 @@ class WaitForConditionWatcherTest {
     watcher.eventReceived(Action.ADDED, configMap);
     assertTrue(watcher.getFuture().isDone());
     assertEquals(watcher.getFuture().get(), configMap);
-    condition.isCalledWith(configMap);
+    assertTrue(condition.isCalledWith(configMap));
   }
 
   @Test
@@ -61,7 +62,7 @@ class WaitForConditionWatcherTest {
     watcher.eventReceived(Action.MODIFIED, configMap);
     assertTrue(watcher.getFuture().isDone());
     assertEquals(watcher.getFuture().get(), configMap);
-    condition.isCalledWith(configMap);
+    assertTrue(condition.isCalledWith(configMap));
   }
 
   @Test
@@ -71,7 +72,7 @@ class WaitForConditionWatcherTest {
     watcher.eventReceived(Action.DELETED, configMap);
     assertTrue(watcher.getFuture().isDone());
     assertNull(watcher.getFuture().get());
-    condition.isCalledWith(null);
+    assertTrue(condition.isCalledWith(null));
   }
 
   @Test
@@ -80,7 +81,7 @@ class WaitForConditionWatcherTest {
     WaitForConditionWatcher<ConfigMap> watcher = new WaitForConditionWatcher<>(condition);
     watcher.eventReceived(Action.ADDED, configMap);
     assertFalse(watcher.getFuture().isDone());
-    condition.isCalledWith(configMap);
+    assertTrue(condition.isCalledWith(configMap));
   }
 
   @Test
@@ -89,16 +90,23 @@ class WaitForConditionWatcherTest {
     WaitForConditionWatcher<ConfigMap> watcher = new WaitForConditionWatcher<>(condition);
     watcher.eventReceived(Action.MODIFIED, configMap);
     assertFalse(watcher.getFuture().isDone());
-    condition.isCalledWith(configMap);
+    assertTrue(condition.isCalledWith(configMap));
   }
 
   @Test
-  void itDoesNotCompleteOnNoMatchDeleted() {
+  void itCompletesExceptionallyOnUnexpectedDeletion() throws Exception {
     TrackingPredicate condition = condition(Objects::nonNull);
     WaitForConditionWatcher<ConfigMap> watcher = new WaitForConditionWatcher<>(condition);
     watcher.eventReceived(Action.DELETED, configMap);
-    assertFalse(watcher.getFuture().isDone());
-    condition.isCalledWith(null);
+    assertTrue(watcher.getFuture().isDone());
+    try {
+      watcher.getFuture().get();
+      fail("should have thrown exception");
+    } catch (ExecutionException e) {
+      assertEquals(WatcherException.class, e.getCause().getClass());
+      assertEquals("Unexpected deletion of watched resource, will never satisfy condition", e.getCause().getMessage());
+    }
+    assertTrue(condition.isCalledWith(null));
   }
 
   @Test
@@ -111,8 +119,8 @@ class WaitForConditionWatcherTest {
       watcher.getFuture().get();
       fail("should have thrown exception");
     } catch (ExecutionException e) {
-      assertEquals(e.getCause().getClass(), WatchException.class);
-      assertEquals(e.getCause().getMessage(), "Action.ERROR received");
+      assertEquals(WatcherException.class, e.getCause().getClass());
+      assertEquals("Action.ERROR received", e.getCause().getMessage());
     }
     assertFalse(condition.isCalled());
   }
@@ -121,40 +129,63 @@ class WaitForConditionWatcherTest {
   void itCompletesExceptionallyWithRetryOnCloseNonGone() throws Exception {
     TrackingPredicate condition = condition(ss -> true);
     WaitForConditionWatcher<ConfigMap> watcher = new WaitForConditionWatcher<>(condition);
-    watcher.onClose(new KubernetesClientException("test", 500, null));
+    WatcherException cause = new WatcherException("Watcher closed", new KubernetesClientException("test", 500, null));
+    watcher.onClose(cause);
     assertTrue(watcher.getFuture().isDone());
     try {
       watcher.getFuture().get();
       fail("should have thrown exception");
     } catch (ExecutionException e) {
-      assertEquals(e.getCause().getClass(), WatchException.class);
-      assertEquals(e.getCause().getMessage(), "Watcher closed");
-      assertTrue(((WatchException) e.getCause()).isShouldRetry());
+      assertEquals(WatcherException.class, e.getCause().getClass());
+      assertEquals("Watcher closed", e.getCause().getMessage());
+      assertTrue(((WatcherException) e.getCause()).isShouldRetry());
     }
     assertFalse(condition.isCalled());
   }
 
   @Test
   void itCompletesExceptionallyWithNoRetryOnCloseGone() throws Exception {
-    TrackingPredicate condition = condition(ss -> true);
+    TrackingPredicate condition = condition(ss -> false);
     WaitForConditionWatcher<ConfigMap> watcher = new WaitForConditionWatcher<>(condition);
-    watcher.onClose(new KubernetesClientException("test", HttpURLConnection.HTTP_GONE, null));
+    watcher.eventReceived(Action.DELETED, null);
+    WatcherException cause = new WatcherException("Unexpected deletion of watched resource, will never satisfy condition", new KubernetesClientException("test", HTTP_GONE, null));
+    watcher.onClose(cause);
     assertTrue(watcher.getFuture().isDone());
     try {
       watcher.getFuture().get();
       fail("should have thrown exception");
     } catch (ExecutionException e) {
-      assertEquals(e.getCause().getClass(), WatchException.class);
-      assertEquals(e.getCause().getMessage(), "Watcher closed");
-      assertFalse(((WatchException) e.getCause()).isShouldRetry());
+      assertEquals(WatcherException.class, e.getCause().getClass());
+      assertEquals("Unexpected deletion of watched resource, will never satisfy condition", e.getCause().getMessage());
+      assertFalse(((WatcherException) e.getCause()).isShouldRetry());
     }
     assertFalse(condition.isCalled());
   }
 
+  @Test
+  void itCompletesExceptionallyWithRetryOnGracefulClose() throws Exception {
+    TrackingPredicate condition = condition(ss -> false);
+    WaitForConditionWatcher<ConfigMap> watcher = new WaitForConditionWatcher<>(condition);
+    watcher.onClose();
+    assertTrue(watcher.getFuture().isDone());
+    try {
+      watcher.getFuture().get();
+      fail("should have thrown exception");
+    } catch (ExecutionException e) {
+      assertEquals(WatcherException.class, e.getCause().getClass());
+      assertEquals("Watcher closed", e.getCause().getMessage());
+      assertTrue(((WatcherException) e.getCause()).isShouldRetry());
+    }
+    assertFalse(condition.isCalled());
+  }
   private TrackingPredicate condition(Predicate<ConfigMap> condition) {
     return new TrackingPredicate(condition);
   }
 
+  private TrackingPredicate condition2(Predicate<ConfigMap> condition) {
+      return new TrackingPredicate(condition);
+    }
+  
   private static class TrackingPredicate implements Predicate<ConfigMap> {
 
     private final Predicate<ConfigMap> delegate;

@@ -26,6 +26,11 @@ public interface Watcher<T> {
    */
   void onClose(KubernetesClientException cause);
 
+  void onClose(WatcherException cause);
+  
+  void onClose();
+
+
   enum Action {
     ADDED, MODIFIED, DELETED, ERROR
   }

@@ -257,6 +257,7 @@ public class WatchConnectionManager<T extends HasMetadata, L extends KubernetesR
               // shut down executor, etc.
               closeEvent(new KubernetesClientException(status));
               close();
+              watcher.onClose();
               return;
             }
 
@@ -271,6 +272,8 @@ public class WatchConnectionManager<T extends HasMetadata, L extends KubernetesR
           logger.error("Received wrong type of object for watch", e);
         } catch (IllegalArgumentException e) {
           logger.error("Invalid event type", e);
+        }catch (Throwable e) {
+            logger.error("Unhandled exception encountered in watcher event handler", e);
         }
       }
 
@@ -344,21 +347,37 @@ public class WatchConnectionManager<T extends HasMetadata, L extends KubernetesR
   @Override
   public void close() {
     logger.debug("Force closing the watch {}", this);
-    closeEvent(null);
+    closeEvent();
     closeWebSocket(webSocketRef.getAndSet(null));
-    if (!executor.isShutdown()) {
-      try {
-        executor.shutdown();
-        if (!executor.awaitTermination(1, TimeUnit.SECONDS)) {
-          logger.warn("Executor didn't terminate in time after shutdown in close(), killing it in: {}", this);
-          executor.shutdownNow();
-        }
-      } catch (Throwable t) {
-        throw KubernetesClientException.launderThrowable(t);
-      }
-    }
+    closeExecutorService();
   }
 
+  final void closeEvent() {
+      if (forceClosed.getAndSet(true)) {
+        logger.debug("Ignoring duplicate firing of onClose event");
+        return;
+      }
+      watcher.onClose();
+    }
+
+  
+  final void closeExecutorService() {
+      if (executor != null && !executor.isShutdown()) {
+        logger.debug("Closing ExecutorService");
+        try {
+            executor.shutdown();
+          if (!executor.awaitTermination(1, TimeUnit.SECONDS)) {
+            logger.warn("Executor didn't terminate in time after shutdown in close(), killing it.");
+            executor.shutdownNow();
+          }
+        } catch (Exception t) {
+          throw KubernetesClientException.launderThrowable(t);
+        }
+      }
+    }
+  
+  
+  
   private void closeEvent(KubernetesClientException cause) {
     if (forceClosed.getAndSet(true)) {
       logger.debug("Ignoring duplicate firing of onClose event");

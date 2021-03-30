@@ -161,7 +161,7 @@ public class WatchHTTPManager<T extends HasMetadata, L extends KubernetesResourc
       @Override
       public void onFailure(Call call, IOException e) {
         logger.info("Watch connection failed. reason: {}", e.getMessage());
-        scheduleReconnect();
+        scheduleReconnect(true);
       }
 
       @Override
@@ -170,13 +170,16 @@ public class WatchHTTPManager<T extends HasMetadata, L extends KubernetesResourc
           throw OperationSupport.requestFailure(request,
             OperationSupport.createStatus(response.code(), response.message()));
         }
-
+        boolean shouldBackoff = true;
         try {
           BufferedSource source = response.body().source();
           while (!source.exhausted()) {
             String message = source.readUtf8LineStrict();
             onMessage(message);
           }
+          // the normal operation of a long poll get is to return once a response is available.
+          // in that case we should reconnect immediately.
+          shouldBackoff = false;
         } catch (Exception e) {
           logger.info("Watch terminated unexpectedly. reason: {}", e.getMessage());
         }
@@ -186,12 +189,12 @@ public class WatchHTTPManager<T extends HasMetadata, L extends KubernetesResourc
         if (response != null) {
           response.body().close();
         }
-        scheduleReconnect();
+        scheduleReconnect(shouldBackoff);
       }
     });
   }
 
-  private void scheduleReconnect() {
+  private void scheduleReconnect(boolean shouldBackoff) {
     if (forceClosed.get()) {
       logger.warn("Ignoring error for already closed/closing connection");
       return;
@@ -216,6 +219,7 @@ public class WatchHTTPManager<T extends HasMetadata, L extends KubernetesResourc
           // actual reconnect only after the back-off time has passed, without
           // blocking the thread
           logger.debug("Scheduling reconnect task");
+          long delay = shouldBackoff ? nextReconnectInterval() : 0;
           executor.schedule(() -> {
             try {
               WatchHTTPManager.this.runWatch();
@@ -226,7 +230,7 @@ public class WatchHTTPManager<T extends HasMetadata, L extends KubernetesResourc
               close();
               watcher.onClose(new KubernetesClientException("Unhandled exception in reconnect attempt", e));
             }
-          }, nextReconnectInterval(), TimeUnit.MILLISECONDS);
+          }, delay, TimeUnit.MILLISECONDS);
         } catch (RejectedExecutionException e) {
           // This is a standard exception if we close the scheduler. We should not print it
           if (!forceClosed.get()) {
