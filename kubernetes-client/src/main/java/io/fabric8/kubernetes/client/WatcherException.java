@@ -18,6 +18,8 @@ package io.fabric8.kubernetes.client;
 
 import java.net.HttpURLConnection;
 
+import io.fabric8.kubernetes.api.model.Status;
+
 public class WatcherException extends Exception {
 
   public WatcherException(String message, Throwable cause) {
@@ -28,6 +30,14 @@ public class WatcherException extends Exception {
     super(message);
   }
 
+  public Status getStatus() {
+      return asClientException().getStatus();
+  }
+  
+  public int getCode() {
+      return asClientException().getCode();
+  }
+  
   public KubernetesClientException asClientException() {
     final Throwable cause = getCause();
     return cause instanceof KubernetesClientException ?
@@ -35,12 +45,12 @@ public class WatcherException extends Exception {
   }
 
   public boolean isHttpGone() {
-    final KubernetesClientException cause = asClientException();
-    return cause.getCode() == HttpURLConnection.HTTP_GONE
-      || (cause.getStatus() != null && cause.getStatus().getCode() == HttpURLConnection.HTTP_GONE);
-  }
+      final KubernetesClientException cause = asClientException();
+      return cause.getCode() == HttpURLConnection.HTTP_GONE
+        || (cause.getStatus() != null && cause.getStatus().getCode() == HttpURLConnection.HTTP_GONE);
+    }
 
-  public boolean isShouldRetry() {
-    return !(getCause() != null && isHttpGone());
-  }
+    public boolean isShouldRetry() {
+      return getCause() == null || !isHttpGone();
+    }
 }
