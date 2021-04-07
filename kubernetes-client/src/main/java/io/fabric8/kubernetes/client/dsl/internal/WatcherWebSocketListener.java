@@ -18,7 +18,6 @@ package io.fabric8.kubernetes.client.dsl.internal;
 import static java.net.HttpURLConnection.HTTP_OK;
 import static java.net.HttpURLConnection.HTTP_UNAVAILABLE;
 
-import java.io.EOFException;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -105,20 +104,19 @@ abstract class WatcherWebSocketListener<T> extends WebSocketListener {
                 }
             }
         } else {
+            logger.warn("Response is null: {}", response);
             logger.warn("Exec Failure", t);
-            logger.warn("AAAAA: " + this.hashCode() + ", started.get(): " + started.get());
-            if (t instanceof EOFException) {
-                WatcherException cause = new WatcherException("Failed to reconnect to websocket: " + t.getMessage(), t);
-                logger.warn("AAAAA: sending closeEvent with cause: " + cause + ", rootCause: " + t.getMessage());
+            if (started.get()) {
+                logger.warn("WebSocket already started and exception received");
+                logger.warn("Setting its websocket attempts to {} to force closing", Integer.MAX_VALUE);
+                logger.warn("Will Sending closeEvent with cause:" + t);
                 manager.currentReconnectAttempt.set(Integer.MAX_VALUE);
-                // manager.closeEvent(cause);
-            } else if (!started.get()) {
+            } else {
                 pushException(new KubernetesClientException("Failed to start websocket", t));
             }
         }
-        logger.warn("AAAAA: " + this.hashCode() + ", manager.cannotReconnect(): " + manager.cannotReconnect());
         if (manager.cannotReconnect()) {
-            logger.warn("AAAAA: " + this.hashCode() + ", manager.cannotReconnect()2: " + manager.cannotReconnect());
+            logger.warn("Manager {} cannot reconnect: {}", manager, manager.cannotReconnect());
             manager.closeEvent(new WatcherException("Connection failure", t));
             return;
         }
