@@ -16,6 +16,23 @@
 
 package io.fabric8.kubernetes.client.dsl.internal;
 
+import static java.net.HttpURLConnection.HTTP_GONE;
+
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.KubernetesResource;
 import io.fabric8.kubernetes.api.model.KubernetesResourceList;
@@ -26,27 +43,21 @@ import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watch;
 import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.kubernetes.client.Watcher.Action;
+import io.fabric8.kubernetes.client.WatcherException;
 import io.fabric8.kubernetes.client.dsl.base.BaseOperation;
 import io.fabric8.kubernetes.client.dsl.base.OperationSupport;
 import io.fabric8.kubernetes.client.utils.HttpClientUtils;
 import io.fabric8.kubernetes.client.utils.Serialization;
 import io.fabric8.kubernetes.client.utils.Utils;
-import okhttp3.*;
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.HttpUrl;
+import okhttp3.Interceptor;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 import okhttp3.logging.HttpLoggingInterceptor;
 import okio.BufferedSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.List;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-
-import static java.net.HttpURLConnection.HTTP_GONE;
 
 public class WatchHTTPManager<T extends HasMetadata, L extends KubernetesResourceList<T>> implements
   Watch {
@@ -167,8 +178,7 @@ public class WatchHTTPManager<T extends HasMetadata, L extends KubernetesResourc
       @Override
       public void onResponse(Call call, Response response) throws IOException {
         if (!response.isSuccessful()) {
-          throw OperationSupport.requestFailure(request,
-            OperationSupport.createStatus(response.code(), response.message()));
+            onStatus(OperationSupport.createStatus(response.code(), response.message()));
         }
         boolean shouldBackoff = true;
         try {
@@ -268,18 +278,7 @@ public class WatchHTTPManager<T extends HasMetadata, L extends KubernetesResourc
           }
         }
       } else if (object instanceof Status) {
-        Status status = (Status) object;
-        // The resource version no longer exists - this has to be handled by the caller.
-        if (status.getCode() == HTTP_GONE) {
-          // exception
-          // shut down executor, etc.
-          close();
-          watcher.onClose(new KubernetesClientException(status));
-          return;
-        }
-
-        watcher.eventReceived(Action.ERROR, null);
-        logger.error("Error received: {}", status.toString());
+          onStatus((Status) object);
       } else {
         logger.error("Unknown message received: {}", messageSource);
       }
@@ -292,6 +291,22 @@ public class WatchHTTPManager<T extends HasMetadata, L extends KubernetesResourc
     }
   }
 
+  private void onStatus(Status status) {
+      // The resource version no longer exists - this has to be handled by the caller.
+      if (status.getCode() == HTTP_GONE) {
+        // exception
+        // shut down executor, etc.
+        close();
+        watcher.onClose(new WatcherException(status.getMessage(), new KubernetesClientException(status)));
+        return;
+      }
+
+      watcher.eventReceived(Action.ERROR, null);
+      logger.error("Error received: {}", status.toString());
+    }
+
+  
+  
   protected static WatchEvent readWatchEvent(String messageSource) throws IOException {
     WatchEvent event = Serialization.unmarshal(messageSource, WatchEvent.class);
     KubernetesResource object = null;

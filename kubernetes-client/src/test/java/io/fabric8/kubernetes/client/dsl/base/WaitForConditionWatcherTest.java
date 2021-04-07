@@ -145,18 +145,16 @@ class WaitForConditionWatcherTest {
 
   @Test
   void itCompletesExceptionallyWithNoRetryOnCloseGone() throws Exception {
-    TrackingPredicate condition = condition(ss -> false);
+    TrackingPredicate condition = condition(ss -> true);
     WaitForConditionWatcher<ConfigMap> watcher = new WaitForConditionWatcher<>(condition);
-    watcher.eventReceived(Action.DELETED, null);
-    WatcherException cause = new WatcherException("Unexpected deletion of watched resource, will never satisfy condition", new KubernetesClientException("test", HTTP_GONE, null));
-    watcher.onClose(cause);
+    watcher.onClose(new WatcherException("Watcher closed", new KubernetesClientException("test", HttpURLConnection.HTTP_GONE, null)));
     assertTrue(watcher.getFuture().isDone());
     try {
       watcher.getFuture().get();
       fail("should have thrown exception");
     } catch (ExecutionException e) {
       assertEquals(WatcherException.class, e.getCause().getClass());
-      assertEquals("Unexpected deletion of watched resource, will never satisfy condition", e.getCause().getMessage());
+      assertEquals("Watcher closed", e.getCause().getMessage());
       assertFalse(((WatcherException) e.getCause()).isShouldRetry());
     }
     assertFalse(condition.isCalled());

@@ -15,6 +15,29 @@
  */
 package io.fabric8.kubernetes.client.dsl.internal;
 
+import static io.fabric8.kubernetes.client.dsl.internal.WatchHTTPManager.readWatchEvent;
+import static java.net.HttpURLConnection.HTTP_GONE;
+import static java.net.HttpURLConnection.HTTP_OK;
+import static java.net.HttpURLConnection.HTTP_UNAVAILABLE;
+
+import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.apache.commons.lang.builder.ReflectionToStringBuilder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.KubernetesResourceList;
 import io.fabric8.kubernetes.api.model.ListOptions;
@@ -28,24 +51,13 @@ import io.fabric8.kubernetes.client.dsl.base.BaseOperation;
 import io.fabric8.kubernetes.client.dsl.base.OperationSupport;
 import io.fabric8.kubernetes.client.utils.HttpClientUtils;
 import io.fabric8.kubernetes.client.utils.Utils;
-import okhttp3.*;
+import okhttp3.HttpUrl;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.WebSocket;
+import okhttp3.WebSocketListener;
 import okio.ByteString;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.List;
-import java.util.Objects;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-
-import static io.fabric8.kubernetes.client.dsl.internal.WatchHTTPManager.readWatchEvent;
-import static java.net.HttpURLConnection.HTTP_GONE;
-import static java.net.HttpURLConnection.HTTP_OK;
 
 public class WatchConnectionManager<T extends HasMetadata, L extends KubernetesResourceList<T>> implements Watch {
 
@@ -181,7 +193,7 @@ public class WatchConnectionManager<T extends HasMetadata, L extends KubernetesR
         // We do not expect a 200 in response to the websocket connection. If it occurs, we throw
         // an exception and try the watch via a persistent HTTP Get.
         // Newer Kubernetes might also return 503 Service Unavailable in case WebSockets are not supported
-        if (response != null && (response.code() == HTTP_OK || response.code() == 503)) {
+        if (response != null && (response.code() == HTTP_OK || response.code() == HTTP_UNAVAILABLE)) {
           queue.clear();
           queue.offer(new KubernetesClientException("Received " + response.code() + " on websocket",
             response.code(), null));
@@ -189,6 +201,7 @@ public class WatchConnectionManager<T extends HasMetadata, L extends KubernetesR
           return;
         }
 
+        boolean shouldBackoff = true;
         if (response != null) {
           // We only need to queue startup failures.
           Status status = OperationSupport.createStatus(response);
@@ -204,6 +217,7 @@ public class WatchConnectionManager<T extends HasMetadata, L extends KubernetesR
         } else {
           logger.warn("Exec Failure", t);
           if (!started.get()) {
+            shouldBackoff = false;
             queue.clear();
             queue.offer(new KubernetesClientException("Failed to start websocket", t));
           }
@@ -213,8 +227,7 @@ public class WatchConnectionManager<T extends HasMetadata, L extends KubernetesR
           closeEvent(new KubernetesClientException("Connection failure", t));
           return;
         }
-
-        scheduleReconnect();
+        scheduleReconnect(shouldBackoff);
       }
 
       @Override
@@ -252,12 +265,16 @@ public class WatchConnectionManager<T extends HasMetadata, L extends KubernetesR
 
             // The resource version no longer exists - this has to be handled by the caller.
             if (status.getCode() == HTTP_GONE) {
+              webSocketRef.get().close(HTTP_GONE, "Received HTTP_GONE in the underlying websocket");
               webSocketRef.set(null); // lose the ref: closing in close() would only generate a Broken pipe
               // exception
               // shut down executor, etc.
-              closeEvent(new KubernetesClientException(status));
+              final KubernetesClientException cause = new KubernetesClientException(status);
+              closeEvent(cause);
               close();
-              watcher.onClose();
+              watcher.eventReceived(Action.ERROR, null);
+              watcher.onClose(cause);
+              logger.error("Error received: {}", status.toString());
               return;
             }
 
@@ -293,12 +310,12 @@ public class WatchConnectionManager<T extends HasMetadata, L extends KubernetesR
           closeEvent(new KubernetesClientException("Connection unexpectedly closed"));
           return;
         }
-        scheduleReconnect();
+        scheduleReconnect(false);
       }
     });
   }
 
-  private void scheduleReconnect() {
+  private void scheduleReconnect(boolean shouldBackoff) {
 
     logger.debug("Submitting reconnect task to the executor");
     // Don't submit new tasks after having called shutdown() on executor
@@ -314,6 +331,12 @@ public class WatchConnectionManager<T extends HasMetadata, L extends KubernetesR
           }
           webSocketRef.set(null);
           try {
+              
+            // actual reconnect only after the back-off time has passed, without
+            // blocking the thread
+            logger.debug("Scheduling reconnect task");
+            long delay = shouldBackoff ? nextReconnectInterval() : 0;
+          
             // actual reconnect only after the back-off time has passed, without
             // blocking the thread
             logger.debug("Scheduling reconnect task");
@@ -331,7 +354,7 @@ public class WatchConnectionManager<T extends HasMetadata, L extends KubernetesR
                   close();
                 }
               }
-            }, nextReconnectInterval(), TimeUnit.MILLISECONDS);
+            }, delay, TimeUnit.MILLISECONDS);
           } catch (RejectedExecutionException e) {
             reconnectPending.set(false);
           }
@@ -360,7 +383,9 @@ public class WatchConnectionManager<T extends HasMetadata, L extends KubernetesR
       watcher.onClose();
     }
 
-  
+  public String toString() {
+      return ReflectionToStringBuilder.toString(this);
+   }
   final void closeExecutorService() {
       if (executor != null && !executor.isShutdown()) {
         logger.debug("Closing ExecutorService");
