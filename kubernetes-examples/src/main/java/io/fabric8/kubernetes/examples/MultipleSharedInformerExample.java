@@ -15,14 +15,12 @@
  */
 package io.fabric8.kubernetes.examples;
 
-import java.util.Collections;
-import java.util.concurrent.TimeUnit;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.fabric8.kubernetes.api.model.ConfigMap;
 import io.fabric8.kubernetes.api.model.Pod;
-import io.fabric8.kubernetes.api.model.PodBuilder;
+import io.fabric8.kubernetes.api.model.Secret;
 import io.fabric8.kubernetes.client.DefaultKubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.informers.ResourceEventHandler;
@@ -32,65 +30,104 @@ import io.fabric8.kubernetes.client.informers.cache.Lister;
 
 public class MultipleSharedInformerExample {
     private static final Logger logger = LoggerFactory.getLogger(MultipleSharedInformerExample.class);
-    private static final String POD_NAME = "myapp-pod";
     private static final String NAMESPACE_PREFIX = "multi-";
 
     public static void main(String[] args) throws InterruptedException {
-        for (int i = 10; i < 30; i++) {
-            newPodSharedInformerClient(NAMESPACE_PREFIX + i);
+        KubernetesClient client = new DefaultKubernetesClient();
+        for (int i = 10; i < 100; i++) {
+            newPodSharedInformerClient(client, NAMESPACE_PREFIX + i);
+            newConfigMapSharedInformerClient(client, NAMESPACE_PREFIX + i);
+            newSecretSharedInformerClient(client, NAMESPACE_PREFIX + i);
         }
     }
 
-    private static void newPodSharedInformerClient(String namespace) throws InterruptedException {
-        try (final KubernetesClient client = new DefaultKubernetesClient()) {
-            SharedInformerFactory sharedInformerFactory = client.informers();
-            SharedIndexInformer<Pod> podInformer = sharedInformerFactory.sharedIndexInformerFor(Pod.class, 30 * 1000L);
-            logger.info("Informer factory initialized.");
+    private static void newPodSharedInformerClient(KubernetesClient client, String namespace)
+            throws InterruptedException {
+        SharedInformerFactory factory = client.informers().inNamespace(namespace);
+        SharedIndexInformer<Pod> informer = factory.sharedIndexInformerFor(Pod.class, 30 * 1000L);
+        logger.info("Informer factory initialized for namesapce: " + namespace);
+        PodEventHandler eventHandler = new PodEventHandler();
+        informer.addEventHandler(eventHandler);
+        logger.info("Starting all registered informers");
+        factory.startAllRegisteredInformers();
+        new Lister<>(informer.getIndexer(), namespace);
+        factory.startAllRegisteredInformers();
+    }
 
-            podInformer.addEventHandler(new PodEventHandler());
+    private static void newConfigMapSharedInformerClient(KubernetesClient client, String namespace)
+            throws InterruptedException {
+        SharedInformerFactory factory = client.informers().inNamespace(namespace);
+        SharedIndexInformer<ConfigMap> informer = factory.sharedIndexInformerFor(ConfigMap.class, 30 * 1000L);
+        logger.info("Informer factory initialized for namesapce: " + namespace);
+        ConfigMapEventHandler eventHandler = new ConfigMapEventHandler();
+        informer.addEventHandler(eventHandler);
+        logger.info("Starting all registered informers");
+        factory.startAllRegisteredInformers();
+        new Lister<>(informer.getIndexer(), namespace);
+        factory.startAllRegisteredInformers();
+    }
 
-            logger.info("Starting all registered informers");
-            sharedInformerFactory.startAllRegisteredInformers();
-            Pod testPod = new PodBuilder().withNewMetadata().withName(POD_NAME)
-                    .withLabels(Collections.singletonMap("app", POD_NAME)).endMetadata().withNewSpec().addNewContainer()
-                    .withName("myapp-container").withImage("busybox:1.28")
-                    .withCommand("sh", "-c", "echo The app is running!; sleep 10").endContainer().addNewInitContainer()
-                    .withName("init-myservice").withImage("busybox:1.28")
-                    .withCommand("sh", "-c", "echo inititalizing...; sleep 5").endInitContainer().endSpec().build();
-
-            client.pods().inNamespace("default").create(testPod);
-            logger.info("Pod created");
-            Thread.sleep(3000L);
-
-            Lister<Pod> podLister = new Lister<>(podInformer.getIndexer(), namespace);
-            Pod myPod = podLister.get(POD_NAME);
-            logger.info("PodLister has {}", podLister.list().size());
-
-            if (myPod != null) {
-                logger.info("***** myapp-pod created {}", myPod.getMetadata().getCreationTimestamp());
-            }
-
-            // Wait for some time now
-            TimeUnit.MINUTES.sleep(3);
-
-            sharedInformerFactory.stopAllRegisteredInformers();
-        }
+    private static void newSecretSharedInformerClient(KubernetesClient client, String namespace)
+            throws InterruptedException {
+        SharedInformerFactory factory = client.informers().inNamespace(namespace);
+        SharedIndexInformer<Secret> informer = factory.sharedIndexInformerFor(Secret.class, 30 * 1000L);
+        logger.info("Informer factory initialized for namesapce: " + namespace);
+        SecretEventHandler eventHandler = new SecretEventHandler();
+        informer.addEventHandler(eventHandler);
+        logger.info("Starting all registered informers");
+        factory.startAllRegisteredInformers();
+        new Lister<>(informer.getIndexer(), namespace);
+        factory.startAllRegisteredInformers();
     }
 
     private static final class PodEventHandler implements ResourceEventHandler<Pod> {
         @Override
-        public void onAdd(Pod pod) {
-            logger.info("{} pod added", pod.getMetadata().getName());
+        public void onAdd(Pod obj) {
+            logger.info("{} pod added", obj.getMetadata().getName());
         }
 
         @Override
-        public void onUpdate(Pod oldPod, Pod newPod) {
-            logger.info("{} pod updated", oldPod.getMetadata().getName());
+        public void onUpdate(Pod oldObj, Pod newObj) {
+            logger.info("{} pod updated", oldObj.getMetadata().getName());
         }
 
         @Override
-        public void onDelete(Pod pod, boolean deletedFinalStateUnknown) {
-            logger.info("{} pod deleted", pod.getMetadata().getName());
+        public void onDelete(Pod obj, boolean deletedFinalStateUnknown) {
+            logger.info("{} pod deleted", obj.getMetadata().getName());
+        }
+    }
+
+    private static final class ConfigMapEventHandler implements ResourceEventHandler<ConfigMap> {
+        @Override
+        public void onAdd(ConfigMap obj) {
+            logger.info("{} ConfigMap added", obj.getMetadata().getName());
+        }
+
+        @Override
+        public void onUpdate(ConfigMap oldObj, ConfigMap newObj) {
+            logger.info("{} ConfigMap updated", oldObj.getMetadata().getName());
+        }
+
+        @Override
+        public void onDelete(ConfigMap obj, boolean deletedFinalStateUnknown) {
+            logger.info("{} ConfigMap deleted", obj.getMetadata().getName());
+        }
+    }
+
+    private static final class SecretEventHandler implements ResourceEventHandler<Secret> {
+        @Override
+        public void onAdd(Secret obj) {
+            logger.info("{} Secret added", obj.getMetadata().getName());
+        }
+
+        @Override
+        public void onUpdate(Secret oldObj, Secret newObj) {
+            logger.info("{} Secret updated", oldObj.getMetadata().getName());
+        }
+
+        @Override
+        public void onDelete(Secret obj, boolean deletedFinalStateUnknown) {
+            logger.info("{} Secret deleted", obj.getMetadata().getName());
         }
     }
 
