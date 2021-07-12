@@ -17,31 +17,23 @@ package io.fabric8.knative.test;
 
 
 import io.fabric8.knative.client.KnativeClient;
-import io.fabric8.knative.mock.KnativeServer;
-import io.fabric8.knative.sources.v1beta1.ApiServerSource;
-import io.fabric8.knative.sources.v1beta1.ApiServerSourceBuilder;
-import io.fabric8.knative.sources.v1beta1.ContainerSource;
-import io.fabric8.knative.sources.v1beta1.ContainerSourceBuilder;
-import io.fabric8.knative.sources.v1beta1.PingSource;
-import io.fabric8.knative.sources.v1beta1.PingSourceBuilder;
-import io.fabric8.knative.sources.v1beta1.SinkBinding;
-import io.fabric8.knative.sources.v1beta1.SinkBindingBuilder;
+import io.fabric8.knative.mock.EnableKnativeMockClient;
+import io.fabric8.knative.mock.KnativeMockServer;
+import io.fabric8.knative.sources.v1.*;
 import io.fabric8.kubernetes.api.model.LabelSelectorBuilder;
 import io.fabric8.kubernetes.api.model.PodTemplateSpecBuilder;
-import org.junit.Rule;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.migrationsupport.rules.EnableRuleMigrationSupport;
 
 import java.net.HttpURLConnection;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-@EnableRuleMigrationSupport
+@EnableKnativeMockClient
 class KnativeSourcesApiGroupResourcesTest {
-  @Rule
-  public KnativeServer server = new KnativeServer();
 
+  KnativeMockServer server;
+  KnativeClient client;
   @Test
   void testPingSourceCreateOrReplace() {
     // Given
@@ -49,7 +41,7 @@ class KnativeSourcesApiGroupResourcesTest {
       .withNewMetadata().withName("test-ping-source").endMetadata()
       .withNewSpec()
       .withSchedule("*/1 * * * *")
-      .withJsonData("{\"message\": \"Hello world!\"}")
+      .withData("{\"message\": \"Hello world!\"}")
       .withNewSink()
       .withNewRef()
       .withApiVersion("v1")
@@ -59,13 +51,12 @@ class KnativeSourcesApiGroupResourcesTest {
       .endSink()
       .endSpec()
       .build();
-    server.expect().post().withPath("/apis/sources.knative.dev/v1beta1/namespaces/ns1/pingsources")
+    server.expect().post().withPath("/apis/sources.knative.dev/v1/namespaces/ns1/pingsources")
       .andReturn(HttpURLConnection.HTTP_OK, pingSource)
       .once();
-    KnativeClient kn = server.getKnativeClient();
 
     // When
-    pingSource = kn.pingSources().inNamespace("ns1").createOrReplace(pingSource);
+    pingSource = client.pingSources().inNamespace("ns1").createOrReplace(pingSource);
 
     // Then
     assertNotNull(pingSource);
@@ -95,13 +86,12 @@ class KnativeSourcesApiGroupResourcesTest {
       .endSink()
       .endSpec()
       .build();
-    server.expect().post().withPath("/apis/sources.knative.dev/v1beta1/namespaces/ns1/apiserversources")
+    server.expect().post().withPath("/apis/sources.knative.dev/v1/namespaces/ns1/apiserversources")
       .andReturn(HttpURLConnection.HTTP_OK, apiServerSource)
       .once();
-    KnativeClient kn = server.getKnativeClient();
 
     // When
-    apiServerSource = kn.apiServerSources().inNamespace("ns1").createOrReplace(apiServerSource);
+    apiServerSource = client.apiServerSources().inNamespace("ns1").createOrReplace(apiServerSource);
 
     // Then
     assertNotNull(apiServerSource);
@@ -128,13 +118,12 @@ class KnativeSourcesApiGroupResourcesTest {
       .endSink()
       .endSpec()
       .build();
-    server.expect().post().withPath("/apis/sources.knative.dev/v1beta1/namespaces/ns1/sinkbindings")
+    server.expect().post().withPath("/apis/sources.knative.dev/v1/namespaces/ns1/sinkbindings")
       .andReturn(HttpURLConnection.HTTP_OK, sinkBinding)
       .once();
-    KnativeClient kn = server.getKnativeClient();
 
     // When
-    sinkBinding = kn.sinkBindings().inNamespace("ns1").createOrReplace(sinkBinding);
+    sinkBinding = client.sinkBindings().inNamespace("ns1").createOrReplace(sinkBinding);
 
     // Then
     assertNotNull(sinkBinding);
@@ -167,18 +156,16 @@ class KnativeSourcesApiGroupResourcesTest {
       .endSink()
       .endSpec()
       .build();
-    server.expect().post().withPath("/apis/sources.knative.dev/v1beta1/namespaces/ns1/containersources")
+    server.expect().post().withPath("/apis/sources.knative.dev/v1/namespaces/ns1/containersources")
       .andReturn(HttpURLConnection.HTTP_OK, containerSource)
       .once();
-    KnativeClient kn = server.getKnativeClient();
 
     // When
-    containerSource = kn.containerSources().inNamespace("ns1").createOrReplace(containerSource);
+    containerSource = client.containerSources().inNamespace("ns1").createOrReplace(containerSource);
 
     // Then
     assertNotNull(containerSource);
     assertEquals("test-heartbeats", containerSource.getMetadata().getName());
-
 
   }
 }

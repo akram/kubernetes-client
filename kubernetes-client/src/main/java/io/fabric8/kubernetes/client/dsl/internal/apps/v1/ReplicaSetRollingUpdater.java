@@ -15,17 +15,14 @@
  */
 package io.fabric8.kubernetes.client.dsl.internal.apps.v1;
 
-import okhttp3.OkHttpClient;
-import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodList;
-import io.fabric8.kubernetes.api.model.LabelSelectorRequirement;
 import io.fabric8.kubernetes.api.model.apps.ReplicaSet;
 import io.fabric8.kubernetes.api.model.apps.ReplicaSetBuilder;
 import io.fabric8.kubernetes.api.model.apps.ReplicaSetList;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.dsl.Operation;
 import io.fabric8.kubernetes.client.dsl.RollableScalableResource;
-import io.fabric8.kubernetes.client.dsl.FilterWatchListDeletable;
+import okhttp3.OkHttpClient;
 
 class ReplicaSetRollingUpdater extends RollingUpdater<ReplicaSet, ReplicaSetList> {
 
@@ -54,51 +51,25 @@ class ReplicaSetRollingUpdater extends RollingUpdater<ReplicaSet, ReplicaSetList
 
   @Override
   protected PodList listSelectedPods(ReplicaSet obj) {
-    FilterWatchListDeletable<Pod, PodList> podLister = pods().inNamespace(namespace);
-    if (obj.getSpec().getSelector().getMatchLabels() != null) {
-      podLister.withLabels(obj.getSpec().getSelector().getMatchLabels());
-    }
-    if (obj.getSpec().getSelector().getMatchExpressions() != null) {
-      for (LabelSelectorRequirement req : obj.getSpec().getSelector().getMatchExpressions()) {
-        switch (req.getOperator()) {
-          case "In":
-            podLister.withLabelIn(req.getKey(), req.getValues().toArray(new String[]{}));
-            break;
-          case "NotIn":
-            podLister.withLabelNotIn(req.getKey(), req.getValues().toArray(new String[]{}));
-            break;
-          case "DoesNotExist":
-            podLister.withoutLabel(req.getKey());
-            break;
-          case "Exists":
-            podLister.withLabel(req.getKey());
-            break;
-        }
-      }
-    }
-    return podLister.list();
+    return listSelectedPods(obj.getSpec().getSelector());
   }
 
   @Override
   protected ReplicaSet updateDeploymentKey(String name, String hash) {
-     ReplicaSet old = resources().inNamespace(namespace).withName(name).get();
-     ReplicaSet updated = new ReplicaSetBuilder(old).editSpec()
+     return resources().inNamespace(namespace).withName(name).edit(old->new ReplicaSetBuilder(old).editSpec()
        .editSelector().addToMatchLabels(DEPLOYMENT_KEY, hash).endSelector()
        .editTemplate().editMetadata().addToLabels(DEPLOYMENT_KEY, hash).endMetadata().endTemplate()
        .endSpec()
-       .build();
-     return resources().inNamespace(namespace).withName(name).patch(updated);
+       .build());
   }
 
   @Override
   protected ReplicaSet removeDeploymentKey(String name) {
-     ReplicaSet old = resources().inNamespace(namespace).withName(name).get();
-     ReplicaSet updated = new ReplicaSetBuilder(old).editSpec()
-       .editSelector().removeFromMatchLabels(DEPLOYMENT_KEY).endSelector()
-       .editTemplate().editMetadata().removeFromLabels(DEPLOYMENT_KEY).endMetadata().endTemplate()
-       .endSpec()
-       .build();
-     return resources().inNamespace(namespace).withName(name).patch(updated);
+     return resources().inNamespace(namespace).withName(name).edit(old->new ReplicaSetBuilder(old).editSpec()
+         .editSelector().removeFromMatchLabels(DEPLOYMENT_KEY).endSelector()
+         .editTemplate().editMetadata().removeFromLabels(DEPLOYMENT_KEY).endMetadata().endTemplate()
+         .endSpec()
+         .build());
   }
 
   @Override

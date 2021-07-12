@@ -24,7 +24,6 @@ import io.fabric8.kubernetes.client.dsl.ExecListener;
 import io.fabric8.kubernetes.client.dsl.ExecWatch;
 import io.fabric8.kubernetes.client.dsl.base.OperationSupport;
 import io.fabric8.kubernetes.client.utils.InputStreamPumper;
-import io.fabric8.kubernetes.client.utils.NonBlockingInputStreamPumper;
 import io.fabric8.kubernetes.client.utils.Utils;
 import okhttp3.Response;
 import okhttp3.WebSocket;
@@ -38,7 +37,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -46,7 +45,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static io.fabric8.kubernetes.client.utils.Utils.closeQuietly;
-import static io.fabric8.kubernetes.client.utils.Utils.shutdownExecutorService;
 
 /**
  * A {@link WebSocketListener} for exec operations.
@@ -79,10 +77,8 @@ public class ExecWebSocketListener extends WebSocketListener implements ExecWatc
 
     private final AtomicReference<WebSocket> webSocketRef = new AtomicReference<>();
     private final ExecutorService executorService = Executors.newSingleThreadExecutor();
-    private final InputStreamPumper pumper;
 
-    private final AtomicBoolean started = new AtomicBoolean(false);
-    private final ArrayBlockingQueue<Object> queue = new ArrayBlockingQueue<>(1);
+    private final CompletableFuture<Void> startedFuture = new CompletableFuture<>();
     private final ExecListener listener;
 
     private final AtomicBoolean explicitlyClosed = new AtomicBoolean(false);
@@ -94,21 +90,6 @@ public class ExecWebSocketListener extends WebSocketListener implements ExecWatc
     private final Set<Closeable> toClose = new LinkedHashSet<>();
 
     private ObjectMapper objectMapper;
-
-    @Deprecated
-    public ExecWebSocketListener(InputStream in, OutputStream out, OutputStream err, PipedOutputStream inputPipe, PipedInputStream outputPipe, PipedInputStream errorPipe, ExecListener listener) {
-        this(new Config(), in, out, err, inputPipe, outputPipe, errorPipe, listener);
-    }
-
-    @Deprecated
-    public ExecWebSocketListener(Config config, InputStream in, OutputStream out, OutputStream err, PipedOutputStream inputPipe, PipedInputStream outputPipe, PipedInputStream errorPipe, ExecListener listener) {
-        this(config, in, out, err, null, inputPipe, outputPipe, errorPipe, null, listener, null);
-    }
-
-    @Deprecated
-    public ExecWebSocketListener(Config config, InputStream in, OutputStream out, OutputStream err, OutputStream errChannel, PipedOutputStream inputPipe, PipedInputStream outputPipe, PipedInputStream errorPipe, PipedInputStream errorChannelPipe, ExecListener listener) {
-        this(config, in, out, err, errChannel, inputPipe, outputPipe, errorPipe, errorChannelPipe, listener, null);
-    }
 
     public ExecWebSocketListener(Config config, InputStream in, OutputStream out, OutputStream err, OutputStream errChannel, PipedOutputStream inputPipe, PipedInputStream outputPipe, PipedInputStream errorPipe, PipedInputStream errorChannelPipe, ExecListener listener, Integer bufferSize) {
         this.config = config;
@@ -122,13 +103,6 @@ public class ExecWebSocketListener extends WebSocketListener implements ExecWatc
         this.output = outputPipe;
         this.error = errorPipe;
         this.errorChannel = errorChannelPipe;
-        this.pumper = new NonBlockingInputStreamPumper(this.in, data -> {
-            try {
-                send(data);
-            } catch (Exception e) {
-                //
-            }
-        });
         this.objectMapper = new ObjectMapper();
     }
 
@@ -150,7 +124,7 @@ public class ExecWebSocketListener extends WebSocketListener implements ExecWatc
 
   /**
    * Performs the cleanup tasks:
-   * 1. closes the InputStream pumper
+   * 1. cancels the InputStream pumper
    * 2. closes all internally managed closeables (piped streams).
    *
    * The order of these tasks can't change or its likely that the pumper will throw errors,
@@ -161,12 +135,8 @@ public class ExecWebSocketListener extends WebSocketListener implements ExecWatc
         return;
    }
 
-    try {
-      closeQuietly(pumper);
-      shutdownExecutorService(executorService);
-    } finally {
-      closeQuietly(toClose);
-    }
+   executorService.shutdownNow();
+   closeQuietly(toClose);
   }
 
     private void closeWebSocketOnce(int code, String reason) {
@@ -185,7 +155,7 @@ public class ExecWebSocketListener extends WebSocketListener implements ExecWatc
     }
 
     public void waitUntilReady() {
-      Utils.waitUntilReady(queue, config.getWebsocketTimeout(), TimeUnit.MILLISECONDS);
+      Utils.waitUntilReadyOrFail(startedFuture, config.getWebsocketTimeout(), TimeUnit.MILLISECONDS);
     }
 
     @Override
@@ -206,12 +176,12 @@ public class ExecWebSocketListener extends WebSocketListener implements ExecWatc
 
             webSocketRef.set(webSocket);
             if (!executorService.isShutdown()) {
-              executorService.submit(pumper);
-              started.set(true);
-              queue.add(true);
+              // the task will be cancelled via shutdownNow
+              InputStreamPumper.pump(InputStreamPumper.asInterruptible(in), this::send, executorService);
+              startedFuture.complete(null);
             }
         } catch (IOException e) {
-          queue.add(new KubernetesClientException(OperationSupport.createStatus(response)));
+          startedFuture.completeExceptionally(new KubernetesClientException(OperationSupport.createStatus(response)));
         } finally {
             if (listener != null) {
                 listener.onOpen(response);
@@ -234,10 +204,7 @@ public class ExecWebSocketListener extends WebSocketListener implements ExecWatc
       try {
         Status status = OperationSupport.createStatus(response);
         LOGGER.error("Exec Failure: HTTP:" + status.getCode() + ". Message:" + status.getMessage(), t);
-        //We only need to queue startup failures.
-        if (!started.get()) {
-          queue.add(new KubernetesClientException(status));
-        }
+        startedFuture.completeExceptionally(new KubernetesClientException(status));
 
         cleanUpOnce();
       } finally {
@@ -326,26 +293,26 @@ public class ExecWebSocketListener extends WebSocketListener implements ExecWatc
         map.put(HEIGHT, rows);
         map.put(WIDTH, cols);
         byte[] bytes = objectMapper.writeValueAsBytes(map);
-        send(bytes, (byte) 4);
+        send(bytes, 0, bytes.length, (byte) 4);
       } catch (Exception e) {
         throw KubernetesClientException.launderThrowable(e);
       }
     }
 
-    private void send(byte[] bytes,byte flag) throws IOException {
-        if (bytes.length > 0) {
+    private void send(byte[] bytes, int offset, int length, byte flag) {
+        if (length > 0) {
             WebSocket ws = webSocketRef.get();
             if (ws != null) {
-                byte[] toSend = new byte[bytes.length + 1];
+                byte[] toSend = new byte[length + 1];
                 toSend[0] = flag;
-                System.arraycopy(bytes, 0, toSend, 1, bytes.length);
+                System.arraycopy(bytes, offset, toSend, 1, length);
                 ws.send(ByteString.of(toSend));
             }
         }
     }
 
-    private void send(byte[] bytes) throws IOException {
-       send(bytes,(byte)0);
+    private void send(byte[] bytes, int offset, int length) {
+       send(bytes, offset, length, (byte)0);
     }
 
 
@@ -354,7 +321,6 @@ public class ExecWebSocketListener extends WebSocketListener implements ExecWatc
             return stream;
         } else if (out != null) {
             PipedInputStream pis = bufferSize == null ? new PipedInputStream() : new PipedInputStream(bufferSize.intValue());
-            toClose.add(out);
             toClose.add(pis);
             return pis;
         } else {
@@ -367,7 +333,6 @@ public class ExecWebSocketListener extends WebSocketListener implements ExecWatc
             return stream;
         } else if (in != null) {
             PipedOutputStream pos = new PipedOutputStream();
-            toClose.add(in);
             toClose.add(pos);
             return pos;
         } else {

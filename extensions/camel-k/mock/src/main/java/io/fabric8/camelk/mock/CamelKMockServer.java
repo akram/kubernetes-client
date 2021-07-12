@@ -15,6 +15,7 @@
  */
 package io.fabric8.camelk.mock;
 
+import io.fabric8.camelk.client.NamespacedCamelKClient;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.ConfigBuilder;
 import io.fabric8.kubernetes.client.server.mock.KubernetesMockServer;
@@ -30,7 +31,7 @@ import java.util.Map;
 import java.util.Queue;
 
 import static io.fabric8.kubernetes.client.utils.HttpClientUtils.createHttpClientForMockServer;
-import static okhttp3.TlsVersion.TLS_1_0;
+import static okhttp3.TlsVersion.TLS_1_2;
 
 public class CamelKMockServer extends KubernetesMockServer {
   private boolean disableApiGroupCheck = true;
@@ -52,12 +53,12 @@ public class CamelKMockServer extends KubernetesMockServer {
     return new String[]{"/api","/apis/camel.apache.org"};
   }
 
-  public CamelKClient createCamelKClient() {
+  public NamespacedCamelKClient createCamelKClient() {
     Config config = new ConfigBuilder()
       .withMasterUrl(url("/"))
       .withNamespace("test")
       .withTrustCerts(true)
-      .withTlsVersions(TLS_1_0)
+      .withTlsVersions(TLS_1_2)
       .build();
     return new DefaultCamelKClient(createHttpClientForMockServer(config), config);
   }

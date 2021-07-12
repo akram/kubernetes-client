@@ -15,138 +15,73 @@
  */
 package io.fabric8.openshift.client;
 
-import io.fabric8.kubernetes.api.model.APIService;
-import io.fabric8.kubernetes.api.model.APIServiceList;
-import io.fabric8.kubernetes.api.model.Binding;
 import io.fabric8.kubernetes.api.model.ComponentStatus;
 import io.fabric8.kubernetes.api.model.ComponentStatusList;
-import io.fabric8.kubernetes.api.model.ConfigMap;
-import io.fabric8.kubernetes.api.model.ConfigMapList;
 import io.fabric8.kubernetes.api.model.DeletionPropagation;
-import io.fabric8.kubernetes.api.model.Endpoints;
-import io.fabric8.kubernetes.api.model.EndpointsList;
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.KubernetesList;
-import io.fabric8.kubernetes.api.model.KubernetesListBuilder;
 import io.fabric8.kubernetes.api.model.KubernetesResourceList;
-import io.fabric8.kubernetes.api.model.LimitRange;
-import io.fabric8.kubernetes.api.model.LimitRangeList;
-import io.fabric8.kubernetes.api.model.Namespace;
-import io.fabric8.kubernetes.api.model.NamespaceList;
-import io.fabric8.kubernetes.api.model.Node;
-import io.fabric8.kubernetes.api.model.NodeList;
-import io.fabric8.kubernetes.api.model.PersistentVolume;
-import io.fabric8.kubernetes.api.model.PersistentVolumeClaim;
-import io.fabric8.kubernetes.api.model.PersistentVolumeClaimList;
-import io.fabric8.kubernetes.api.model.PersistentVolumeList;
-import io.fabric8.kubernetes.api.model.Pod;
-import io.fabric8.kubernetes.api.model.PodList;
-import io.fabric8.kubernetes.api.model.ReplicationController;
-import io.fabric8.kubernetes.api.model.ReplicationControllerList;
-import io.fabric8.kubernetes.api.model.ResourceQuota;
-import io.fabric8.kubernetes.api.model.ResourceQuotaList;
 import io.fabric8.kubernetes.api.model.RootPaths;
-import io.fabric8.kubernetes.api.model.Secret;
-import io.fabric8.kubernetes.api.model.SecretList;
-import io.fabric8.kubernetes.api.model.Service;
-import io.fabric8.kubernetes.api.model.ServiceAccount;
-import io.fabric8.kubernetes.api.model.ServiceAccountList;
-import io.fabric8.kubernetes.api.model.ServiceList;
-import io.fabric8.kubernetes.api.model.authentication.TokenReview;
-import io.fabric8.kubernetes.api.model.certificates.v1beta1.CertificateSigningRequest;
-import io.fabric8.kubernetes.api.model.certificates.v1beta1.CertificateSigningRequestList;
-import io.fabric8.kubernetes.api.model.coordination.v1.Lease;
-import io.fabric8.kubernetes.api.model.coordination.v1.LeaseList;
-import io.fabric8.kubernetes.api.model.node.v1beta1.RuntimeClass;
-import io.fabric8.kubernetes.api.model.node.v1beta1.RuntimeClassList;
-import io.fabric8.kubernetes.client.AdmissionRegistrationAPIGroupClient;
-import io.fabric8.kubernetes.client.AdmissionRegistrationAPIGroupDSL;
-import io.fabric8.kubernetes.client.AppsAPIGroupClient;
-import io.fabric8.kubernetes.client.AutoscalingAPIGroupClient;
-import io.fabric8.kubernetes.client.BaseClient;
-import io.fabric8.kubernetes.client.BatchAPIGroupClient;
+import io.fabric8.kubernetes.client.BaseKubernetesClient;
 import io.fabric8.kubernetes.client.Config;
-import io.fabric8.kubernetes.client.CustomResource;
-import io.fabric8.kubernetes.client.DefaultKubernetesClient;
 import io.fabric8.kubernetes.client.ExtensionsAPIGroupClient;
 import io.fabric8.kubernetes.client.KubernetesClientException;
-import io.fabric8.kubernetes.client.MetricAPIGroupClient;
-import io.fabric8.kubernetes.client.NamespacedKubernetesClient;
-import io.fabric8.kubernetes.client.NetworkAPIGroupClient;
-import io.fabric8.kubernetes.client.PolicyAPIGroupClient;
-import io.fabric8.kubernetes.client.RbacAPIGroupClient;
 import io.fabric8.kubernetes.client.RequestConfig;
-import io.fabric8.kubernetes.client.SchedulingAPIGroupClient;
-import io.fabric8.kubernetes.client.StorageAPIGroupClient;
-import io.fabric8.kubernetes.client.V1APIGroupClient;
 import io.fabric8.kubernetes.client.VersionInfo;
 import io.fabric8.kubernetes.client.WithRequestCallable;
-import io.fabric8.kubernetes.client.dsl.ApiextensionsAPIGroupDSL;
-import io.fabric8.kubernetes.client.dsl.AppsAPIGroupDSL;
-import io.fabric8.kubernetes.client.dsl.AuthorizationAPIGroupDSL;
-import io.fabric8.kubernetes.client.dsl.AutoscalingAPIGroupDSL;
-import io.fabric8.kubernetes.client.dsl.BatchAPIGroupDSL;
-import io.fabric8.kubernetes.client.dsl.CertificatesAPIGroupDSL;
-import io.fabric8.kubernetes.client.dsl.Createable;
-import io.fabric8.kubernetes.client.dsl.DiscoveryAPIGroupDSL;
-import io.fabric8.kubernetes.client.dsl.EventingAPIGroupDSL;
-import io.fabric8.kubernetes.client.dsl.FlowControlAPIGroupDSL;
 import io.fabric8.kubernetes.client.dsl.FunctionCallable;
 import io.fabric8.kubernetes.client.dsl.InOutCreateable;
-import io.fabric8.kubernetes.client.dsl.KubernetesListMixedOperation;
 import io.fabric8.kubernetes.client.dsl.LogWatch;
-import io.fabric8.kubernetes.client.dsl.MetricAPIGroupDSL;
 import io.fabric8.kubernetes.client.dsl.MixedOperation;
 import io.fabric8.kubernetes.client.dsl.NamespaceListVisitFromServerGetDeleteRecreateWaitApplicable;
-import io.fabric8.kubernetes.client.dsl.NamespaceVisitFromServerGetWatchDeleteRecreateWaitApplicable;
-import io.fabric8.kubernetes.client.dsl.NetworkAPIGroupDSL;
 import io.fabric8.kubernetes.client.dsl.NonNamespaceOperation;
 import io.fabric8.kubernetes.client.dsl.ParameterMixedOperation;
 import io.fabric8.kubernetes.client.dsl.ParameterNamespaceListVisitFromServerGetDeleteRecreateWaitApplicable;
-import io.fabric8.kubernetes.client.dsl.PodResource;
-import io.fabric8.kubernetes.client.dsl.PolicyAPIGroupDSL;
-import io.fabric8.kubernetes.client.dsl.RbacAPIGroupDSL;
 import io.fabric8.kubernetes.client.dsl.Resource;
-import io.fabric8.kubernetes.client.dsl.RollableScalableResource;
-import io.fabric8.kubernetes.client.dsl.SchedulingAPIGroupDSL;
-import io.fabric8.kubernetes.client.dsl.ServiceResource;
-import io.fabric8.kubernetes.client.dsl.StorageAPIGroupDSL;
-import io.fabric8.kubernetes.client.dsl.V1APIGroupDSL;
-import io.fabric8.kubernetes.client.dsl.base.CustomResourceDefinitionContext;
-import io.fabric8.kubernetes.client.dsl.internal.CustomResourceOperationContext;
-import io.fabric8.kubernetes.client.dsl.internal.CustomResourceOperationsImpl;
-import io.fabric8.kubernetes.client.dsl.internal.RawCustomResourceOperationsImpl;
-import io.fabric8.kubernetes.client.dsl.internal.coordination.v1.LeaseOperationsImpl;
+import io.fabric8.kubernetes.client.dsl.internal.CreateOnlyResourceOperationsImpl;
+import io.fabric8.kubernetes.client.dsl.internal.NamespacedCreateOnlyResourceOperationsImpl;
 import io.fabric8.kubernetes.client.dsl.internal.core.v1.ComponentStatusOperationsImpl;
 import io.fabric8.kubernetes.client.extended.leaderelection.LeaderElectorBuilder;
-import io.fabric8.kubernetes.client.extended.run.RunConfigBuilder;
-import io.fabric8.kubernetes.client.extended.run.RunOperations;
-import io.fabric8.kubernetes.client.informers.SharedInformerFactory;
 import io.fabric8.kubernetes.client.utils.BackwardsCompatibilityInterceptor;
 import io.fabric8.kubernetes.client.utils.ImpersonatorInterceptor;
 import io.fabric8.kubernetes.client.utils.Serialization;
+import io.fabric8.openshift.api.model.BrokerTemplateInstance;
+import io.fabric8.openshift.api.model.BrokerTemplateInstanceList;
 import io.fabric8.openshift.api.model.Build;
 import io.fabric8.openshift.api.model.BuildConfig;
 import io.fabric8.openshift.api.model.BuildConfigList;
 import io.fabric8.openshift.api.model.BuildList;
 import io.fabric8.openshift.api.model.ClusterNetwork;
 import io.fabric8.openshift.api.model.ClusterNetworkList;
+import io.fabric8.openshift.api.model.ClusterRole;
 import io.fabric8.openshift.api.model.ClusterRoleBinding;
 import io.fabric8.openshift.api.model.ClusterRoleBindingList;
+import io.fabric8.openshift.api.model.ClusterRoleList;
 import io.fabric8.openshift.api.model.DeploymentConfig;
 import io.fabric8.openshift.api.model.DeploymentConfigList;
 import io.fabric8.openshift.api.model.EgressNetworkPolicy;
 import io.fabric8.openshift.api.model.EgressNetworkPolicyList;
 import io.fabric8.openshift.api.model.Group;
 import io.fabric8.openshift.api.model.GroupList;
+import io.fabric8.openshift.api.model.HelmChartRepository;
+import io.fabric8.openshift.api.model.HelmChartRepositoryList;
+import io.fabric8.openshift.api.model.HostSubnet;
+import io.fabric8.openshift.api.model.HostSubnetList;
+import io.fabric8.openshift.api.model.Identity;
+import io.fabric8.openshift.api.model.IdentityList;
 import io.fabric8.openshift.api.model.Image;
 import io.fabric8.openshift.api.model.ImageList;
+import io.fabric8.openshift.api.model.ImageSignature;
 import io.fabric8.openshift.api.model.ImageStream;
+import io.fabric8.openshift.api.model.ImageStreamImage;
+import io.fabric8.openshift.api.model.ImageStreamImport;
 import io.fabric8.openshift.api.model.ImageStreamList;
+import io.fabric8.openshift.api.model.ImageStreamMapping;
 import io.fabric8.openshift.api.model.ImageStreamTag;
 import io.fabric8.openshift.api.model.ImageStreamTagList;
 import io.fabric8.openshift.api.model.ImageTag;
 import io.fabric8.openshift.api.model.ImageTagList;
+import io.fabric8.openshift.api.model.LocalResourceAccessReview;
 import io.fabric8.openshift.api.model.LocalSubjectAccessReview;
 import io.fabric8.openshift.api.model.NetNamespace;
 import io.fabric8.openshift.api.model.NetNamespaceList;
@@ -155,87 +90,133 @@ import io.fabric8.openshift.api.model.OAuthAccessTokenList;
 import io.fabric8.openshift.api.model.OAuthAuthorizeToken;
 import io.fabric8.openshift.api.model.OAuthAuthorizeTokenList;
 import io.fabric8.openshift.api.model.OAuthClient;
+import io.fabric8.openshift.api.model.OAuthClientAuthorization;
+import io.fabric8.openshift.api.model.OAuthClientAuthorizationList;
 import io.fabric8.openshift.api.model.OAuthClientList;
+import io.fabric8.openshift.api.model.PodSecurityPolicyReview;
+import io.fabric8.openshift.api.model.PodSecurityPolicySelfSubjectReview;
+import io.fabric8.openshift.api.model.PodSecurityPolicySubjectReview;
 import io.fabric8.openshift.api.model.RangeAllocation;
 import io.fabric8.openshift.api.model.RangeAllocationList;
+import io.fabric8.openshift.api.model.ResourceAccessReview;
+import io.fabric8.openshift.api.model.ResourceAccessReviewResponse;
 import io.fabric8.openshift.api.model.Role;
 import io.fabric8.openshift.api.model.RoleBinding;
 import io.fabric8.openshift.api.model.RoleBindingList;
+import io.fabric8.openshift.api.model.RoleBindingRestriction;
+import io.fabric8.openshift.api.model.RoleBindingRestrictionList;
 import io.fabric8.openshift.api.model.RoleList;
 import io.fabric8.openshift.api.model.Route;
 import io.fabric8.openshift.api.model.RouteList;
 import io.fabric8.openshift.api.model.SecurityContextConstraints;
 import io.fabric8.openshift.api.model.SecurityContextConstraintsList;
+import io.fabric8.openshift.api.model.SelfSubjectRulesReview;
 import io.fabric8.openshift.api.model.SubjectAccessReview;
 import io.fabric8.openshift.api.model.SubjectAccessReviewResponse;
+import io.fabric8.openshift.api.model.SubjectRulesReview;
 import io.fabric8.openshift.api.model.Template;
+import io.fabric8.openshift.api.model.TemplateInstance;
+import io.fabric8.openshift.api.model.TemplateInstanceList;
 import io.fabric8.openshift.api.model.TemplateList;
 import io.fabric8.openshift.api.model.User;
+import io.fabric8.openshift.api.model.UserIdentityMapping;
 import io.fabric8.openshift.api.model.UserList;
+import io.fabric8.openshift.api.model.UserOAuthAccessToken;
+import io.fabric8.openshift.api.model.UserOAuthAccessTokenList;
+import io.fabric8.openshift.api.model.miscellaneous.cloudcredential.v1.CredentialsRequest;
+import io.fabric8.openshift.api.model.miscellaneous.cloudcredential.v1.CredentialsRequestList;
+import io.fabric8.openshift.api.model.miscellaneous.cncf.cni.v1.NetworkAttachmentDefinition;
+import io.fabric8.openshift.api.model.miscellaneous.cncf.cni.v1.NetworkAttachmentDefinitionList;
+import io.fabric8.openshift.api.model.miscellaneous.imageregistry.operator.v1.ConfigList;
+import io.fabric8.openshift.api.model.miscellaneous.metal3.v1alpha1.BareMetalHost;
+import io.fabric8.openshift.api.model.miscellaneous.metal3.v1alpha1.BareMetalHostList;
+import io.fabric8.openshift.api.model.miscellaneous.network.operator.v1.OperatorPKI;
+import io.fabric8.openshift.api.model.miscellaneous.network.operator.v1.OperatorPKIList;
 import io.fabric8.openshift.client.dsl.BuildConfigResource;
 import io.fabric8.openshift.client.dsl.BuildResource;
 import io.fabric8.openshift.client.dsl.DeployableScalableResource;
+import io.fabric8.openshift.client.dsl.MachineConfigurationAPIGroupDSL;
+import io.fabric8.openshift.client.dsl.OpenShiftClusterAutoscalingAPIGroupDSL;
 import io.fabric8.openshift.client.dsl.OpenShiftConfigAPIGroupDSL;
 import io.fabric8.openshift.client.dsl.OpenShiftConsoleAPIGroupDSL;
+import io.fabric8.openshift.client.dsl.OpenShiftMachineAPIGroupDSL;
 import io.fabric8.openshift.client.dsl.OpenShiftMonitoringAPIGroupDSL;
 import io.fabric8.openshift.client.dsl.OpenShiftOperatorAPIGroupDSL;
 import io.fabric8.openshift.client.dsl.OpenShiftOperatorHubAPIGroupDSL;
 import io.fabric8.openshift.client.dsl.OpenShiftQuotaAPIGroupDSL;
+import io.fabric8.openshift.client.dsl.OpenShiftStorageVersionMigratorApiGroupDSL;
+import io.fabric8.openshift.client.dsl.OpenShiftTunedAPIGroupDSL;
+import io.fabric8.openshift.client.dsl.OpenShiftWhereaboutsAPIGroupDSL;
 import io.fabric8.openshift.client.dsl.ProjectOperation;
 import io.fabric8.openshift.client.dsl.ProjectRequestOperation;
 import io.fabric8.openshift.client.dsl.TemplateResource;
-import io.fabric8.openshift.client.dsl.internal.BuildConfigOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.BuildOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.ClusterNetworkOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.ClusterRoleBindingOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.DeploymentConfigOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.EgressNetworkPolicyOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.GroupOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.ImageOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.ImageStreamOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.ImageStreamTagOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.ImageTagOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.NetNamespaceOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.OAuthAccessTokenOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.OAuthAuthorizeTokenOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.OAuthClientOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.OpenShiftSubjectAccessReviewOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.ProjectOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.authorization.ClusterRoleOperationsImpl;
 import io.fabric8.openshift.client.dsl.internal.ProjectRequestsOperationImpl;
-import io.fabric8.openshift.client.dsl.internal.RangeAllocationOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.RoleBindingOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.RoleOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.RouteOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.SecurityContextConstraintsOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.TemplateOperationsImpl;
-import io.fabric8.openshift.client.dsl.internal.UserOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.apps.DeploymentConfigOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.authorization.ClusterRoleBindingOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.authorization.RoleBindingOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.authorization.RoleBindingRestrictionOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.authorization.RoleOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.build.BuildConfigOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.build.BuildOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.cloudcredential.CredentialsRequestOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.core.BareMetalHostOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.core.NetworkAttachmentDefinitionOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.core.TemplateOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.helm.HelmChartRepositoryOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.image.ImageSignatureOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.image.ImageStreamImageOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.network.ClusterNetworkOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.network.EgressNetworkPolicyOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.network.HostSubnetOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.network.operator.OperatorPKIOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.oauth.OAuthClientAuthorizationOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.oauth.UserOAuthAccessTokenOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.template.BrokerTemplateInstanceOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.template.TemplateInstanceOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.user.GroupOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.image.ImageOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.image.ImageStreamOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.image.ImageStreamTagOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.image.ImageTagOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.network.NetNamespaceOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.oauth.OAuthAccessTokenOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.oauth.OAuthAuthorizeTokenOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.oauth.OAuthClientOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.project.ProjectOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.route.RouteOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.security.RangeAllocationOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.security.SecurityContextConstraintsOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.user.IdentityOperationsImpl;
+import io.fabric8.openshift.client.dsl.internal.user.UserOperationsImpl;
 import io.fabric8.openshift.client.internal.OpenShiftClusterOperationsImpl;
 import io.fabric8.openshift.client.internal.OpenShiftNamespaceVisitFromServerGetWatchDeleteRecreateWaitApplicableListImpl;
 import io.fabric8.openshift.client.internal.OpenShiftOAuthInterceptor;
+import okhttp3.Authenticator;
+import okhttp3.OkHttpClient;
+
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ForkJoinPool;
-import okhttp3.Authenticator;
-import okhttp3.OkHttpClient;
 
 /**
  * Class for Default Openshift Client implementing KubernetesClient interface.
  * It is thread safe.
  */
-public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpenShiftClient {
+public class DefaultOpenShiftClient extends BaseKubernetesClient<NamespacedOpenShiftClient> implements NamespacedOpenShiftClient {
 
   private static final Map<String, Boolean> API_GROUPS_ENABLED_PER_URL = new HashMap<>();
+  public static final String AUTHORIZATION_OPENSHIFT_IO = "authorization.openshift.io";
+  public static final String V1_APIVERSION = "v1";
+  private static final String SECURITY_OPENSHIFT_APIGROUP = "security.openshift.io";
+  private static final String IMAGE_OPENSHIFT_APIGROUP = "image.openshift.io";
 
   private final URL openShiftUrl;
-  private final NamespacedKubernetesClient delegate;
 
   public DefaultOpenShiftClient() {
     this(new OpenShiftConfigBuilder().build());
@@ -253,7 +234,6 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
     super(configWithApiGroupsEnabled(clientWithOpenShiftOAuthInterceptor(config), config));
     try {
       this.httpClient = clientWithOpenShiftOAuthInterceptor(this.httpClient, config);
-      this.delegate = new DefaultKubernetesClient(this.httpClient, config);
       this.openShiftUrl = new URL(config.getOpenShiftUrl());
     } catch (MalformedURLException e) {
       throw new KubernetesClientException("Could not create client", e);
@@ -264,7 +244,6 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
     super(httpClient, configWithApiGroupsEnabled(httpClient, config));
     try {
       this.httpClient = clientWithOpenShiftOAuthInterceptor(httpClient, getConfiguration());
-      this.delegate = new DefaultKubernetesClient(this.httpClient, config);
       this.openShiftUrl = new URL(config.getOpenShiftUrl());
     } catch (MalformedURLException e) {
       throw new KubernetesClientException("Could not create client", e);
@@ -327,6 +306,11 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
   }
 
   @Override
+  public OpenShiftClusterAutoscalingAPIGroupDSL clusterAutoscaling() {
+    return adapt(OpenShiftClusterAutoscalingAPIGroupClient.class);
+  }
+
+  @Override
   public OpenShiftOperatorAPIGroupDSL operator() {
     return adapt(OpenShiftOperatorAPIGroupClient.class);
   }
@@ -348,170 +332,15 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
   }
 
   @Override
-  public NamespaceVisitFromServerGetWatchDeleteRecreateWaitApplicable<HasMetadata> resource(HasMetadata item) {
-    return delegate.resource(item);
-  }
-
-  @Override
-  public NamespaceVisitFromServerGetWatchDeleteRecreateWaitApplicable<HasMetadata> resource(String s) {
-    return delegate.resource(s);
-  }
-
-  @Override
   public NamespaceListVisitFromServerGetDeleteRecreateWaitApplicable<HasMetadata> resourceList(KubernetesResourceList item) {
     return new OpenShiftNamespaceVisitFromServerGetWatchDeleteRecreateWaitApplicableListImpl(httpClient, getConfiguration(), getNamespace(), null, false, false, new ArrayList<>(), item, null, DeletionPropagation.BACKGROUND, true, false) {
     };
   }
 
   @Override
-  public NamespaceListVisitFromServerGetDeleteRecreateWaitApplicable<HasMetadata> resourceList(HasMetadata... items) {
-    return resourceList(new KubernetesListBuilder().withItems(items).build());
-  }
-
-  @Override
-  public NamespaceListVisitFromServerGetDeleteRecreateWaitApplicable<HasMetadata> resourceList(Collection<HasMetadata> items) {
-    return delegate.resourceList(items);
-  }
-
-  @Override
   public ParameterNamespaceListVisitFromServerGetDeleteRecreateWaitApplicable<HasMetadata> resourceList(String s) {
     return new OpenShiftNamespaceVisitFromServerGetWatchDeleteRecreateWaitApplicableListImpl(httpClient, getConfiguration(), getNamespace(), null, false, false, new ArrayList<>(), s, null, DeletionPropagation.BACKGROUND, true, false) {
     };
-  }
-
-  @Override
-  public MixedOperation<Endpoints, EndpointsList, Resource<Endpoints>> endpoints() {
-    return delegate.endpoints();
-  }
-
-  @Override
-  public MixedOperation<Binding, KubernetesResourceList<Binding>, Resource<Binding>> bindings() {
-    return delegate.bindings();
-  }
-
-  @Override
-  public NonNamespaceOperation<Namespace, NamespaceList, Resource<Namespace>> namespaces() {
-    return delegate.namespaces();
-  }
-
-  @Override
-  public NonNamespaceOperation<Node, NodeList, Resource<Node>> nodes() {
-    return delegate.nodes();
-  }
-
-  @Override
-  public NonNamespaceOperation<PersistentVolume, PersistentVolumeList, Resource<PersistentVolume>> persistentVolumes() {
-    return delegate.persistentVolumes();
-  }
-
-  @Override
-  public MixedOperation<PersistentVolumeClaim, PersistentVolumeClaimList, Resource<PersistentVolumeClaim>> persistentVolumeClaims() {
-    return delegate.persistentVolumeClaims();
-  }
-
-  @Override
-  public MixedOperation<Pod, PodList, PodResource<Pod>> pods() {
-    return delegate.pods();
-  }
-
-  @Override
-  public MixedOperation<ReplicationController, ReplicationControllerList, RollableScalableResource<ReplicationController>> replicationControllers() {
-    return delegate.replicationControllers();
-  }
-
-  @Override
-  public MixedOperation<ResourceQuota, ResourceQuotaList, Resource<ResourceQuota>> resourceQuotas() {
-    return delegate.resourceQuotas();
-  }
-
-  @Override
-  public MixedOperation<Secret, SecretList, Resource<Secret>> secrets() {
-    return delegate.secrets();
-  }
-
-  @Override
-  public MixedOperation<Service, ServiceList, ServiceResource<Service>> services() {
-    return delegate.services();
-  }
-
-  @Override
-  public MixedOperation<ServiceAccount, ServiceAccountList, Resource<ServiceAccount>> serviceAccounts() {
-    return delegate.serviceAccounts();
-  }
-
-  @Override
-  public MixedOperation<APIService, APIServiceList, Resource<APIService>> apiServices() {
-    return delegate.apiServices();
-  }
-
-  @Override
-  public KubernetesListMixedOperation lists() {
-    return delegate.lists();
-  }
-
-  @Override
-  public MixedOperation<ConfigMap, ConfigMapList, Resource<ConfigMap>> configMaps() {
-    return delegate.configMaps();
-  }
-
-  @Override
-  public MixedOperation<LimitRange, LimitRangeList, Resource<LimitRange>> limitRanges() {
-    return delegate.limitRanges();
-  }
-
-  @Override
-  public <T extends CustomResource>  MixedOperation<T, KubernetesResourceList<T>, Resource<T>> customResources(Class<T> resourceType ) {
-    return new CustomResourceOperationsImpl<>(new CustomResourceOperationContext().withOkhttpClient(httpClient).withConfig(getConfiguration()).withCrdContext(CustomResourceDefinitionContext.fromCustomResourceType(resourceType)).withType(resourceType));
-  }
-
-
-  @Override
-  public <T extends CustomResource, L extends KubernetesResourceList<T>> MixedOperation<T, L, Resource<T>> customResources(Class<T> resourceType, Class<L> listClass) {
-    return new CustomResourceOperationsImpl<>(new CustomResourceOperationContext().withOkhttpClient(httpClient).withConfig(getConfiguration()).withCrdContext(CustomResourceDefinitionContext.fromCustomResourceType(resourceType)).withType(resourceType).withListType(listClass));
-  }
-
-  @Override
-  public <T extends HasMetadata, L extends KubernetesResourceList<T>> MixedOperation<T, L, Resource<T>> customResources(CustomResourceDefinitionContext crdContext, Class<T> resourceType, Class<L> listClass) {
-    return new CustomResourceOperationsImpl<>(new CustomResourceOperationContext().withOkhttpClient(httpClient).withConfig(getConfiguration()).withCrdContext(crdContext).withType(resourceType).withListType(listClass));
-  }
-
-  @Override
-  public DiscoveryAPIGroupDSL discovery() {
-    return delegate.discovery();
-  }
-
-  @Override
-  public EventingAPIGroupDSL events() {
-    return delegate.events();
-  }
-
-  @Override
-  public ApiextensionsAPIGroupDSL apiextensions() {
-    return delegate.apiextensions();
-  }
-
-  @Override
-  public NonNamespaceOperation<CertificateSigningRequest, CertificateSigningRequestList, Resource<CertificateSigningRequest>> certificateSigningRequests() {
-    return delegate.certificateSigningRequests();
-  }
-
-  @Override
-  public CertificatesAPIGroupDSL certificates() {
-    return delegate.certificates();
-  }
-
-  @Override
-  public AuthorizationAPIGroupDSL authorization() {
-    return delegate.authorization();
-  }
-
-  @Override
-  public Createable<TokenReview> tokenReviews() {
-    return delegate.tokenReviews();
-  }
-
-  public RawCustomResourceOperationsImpl customResource(CustomResourceDefinitionContext customResourceDefinition) {
-    return new RawCustomResourceOperationsImpl(httpClient, getConfiguration(), customResourceDefinition);
   }
 
   @Override
@@ -525,6 +354,11 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
   }
 
   @Override
+  public MixedOperation<CredentialsRequest, CredentialsRequestList, Resource<CredentialsRequest>> credentialsRequests() {
+    return new CredentialsRequestOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
+
+  @Override
   public MixedOperation<DeploymentConfig, DeploymentConfigList, DeployableScalableResource<DeploymentConfig>> deploymentConfigs() {
     return new DeploymentConfigOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
   }
@@ -532,6 +366,11 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
   @Override
   public MixedOperation<Group, GroupList, Resource<Group>> groups() {
     return new GroupOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
+
+  @Override
+  public NonNamespaceOperation<HelmChartRepository, HelmChartRepositoryList, Resource<HelmChartRepository>> helmChartRepositories() {
+    return new HelmChartRepositoryOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
   }
 
   @Override
@@ -555,6 +394,36 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
   }
 
   @Override
+  public NamespacedCreateOnlyResourceOperationsImpl<ImageStreamImport, ImageStreamImport> imageStreamImports() {
+    return new NamespacedCreateOnlyResourceOperationsImpl<>(getHttpClient(), getConfiguration(), IMAGE_OPENSHIFT_APIGROUP, V1_APIVERSION, HasMetadata.getPlural(ImageStreamImport.class), ImageStreamImport.class);
+  }
+
+  @Override
+  public NamespacedCreateOnlyResourceOperationsImpl<ImageStreamMapping, ImageStreamMapping> imageStreamMappings() {
+    return new NamespacedCreateOnlyResourceOperationsImpl<>(getHttpClient(), getConfiguration(), IMAGE_OPENSHIFT_APIGROUP, V1_APIVERSION, HasMetadata.getPlural(ImageStreamMapping.class), ImageStreamMapping.class);
+  }
+
+  @Override
+  public ImageStreamImageOperationsImpl imageStreamImages() {
+    return new ImageStreamImageOperationsImpl(getHttpClient(), getConfiguration(), IMAGE_OPENSHIFT_APIGROUP, V1_APIVERSION, HasMetadata.getPlural(ImageStreamImage.class));
+  }
+
+  @Override
+  public ImageSignatureOperationsImpl imageSignatures() {
+    return new ImageSignatureOperationsImpl(getHttpClient(), getConfiguration(), IMAGE_OPENSHIFT_APIGROUP, V1_APIVERSION, HasMetadata.getPlural(ImageSignature.class));
+  }
+
+  @Override
+  public NonNamespaceOperation<io.fabric8.openshift.api.model.miscellaneous.imageregistry.operator.v1.Config, ConfigList, Resource<io.fabric8.openshift.api.model.miscellaneous.imageregistry.operator.v1.Config>> imageRegistryOperatorConfigs() {
+    return new io.fabric8.openshift.client.dsl.internal.imageregistry.operator.ConfigOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
+
+  @Override
+  public MixedOperation<NetworkAttachmentDefinition, NetworkAttachmentDefinitionList, Resource<NetworkAttachmentDefinition>> networkAttachmentDefinitions() {
+    return new NetworkAttachmentDefinitionOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
+
+  @Override
   public NonNamespaceOperation<OAuthAccessToken, OAuthAccessTokenList, Resource<OAuthAccessToken>> oAuthAccessTokens() {
     return new OAuthAccessTokenOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
   }
@@ -567,6 +436,31 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
   @Override
   public NonNamespaceOperation<OAuthClient, OAuthClientList, Resource<OAuthClient>> oAuthClients() {
     return new OAuthClientOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
+
+  @Override
+  public NamespacedCreateOnlyResourceOperationsImpl<PodSecurityPolicyReview, PodSecurityPolicyReview> podSecurityPolicyReviews() {
+    return new NamespacedCreateOnlyResourceOperationsImpl<>(getHttpClient(), getConfiguration(), SECURITY_OPENSHIFT_APIGROUP, V1_APIVERSION, HasMetadata.getPlural(PodSecurityPolicyReview.class), PodSecurityPolicyReview.class);
+  }
+
+  @Override
+  public NonNamespaceOperation<OAuthClientAuthorization, OAuthClientAuthorizationList, Resource<OAuthClientAuthorization>> oAuthClientAuthorizations() {
+    return new OAuthClientAuthorizationOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
+
+  @Override
+  public MixedOperation<OperatorPKI, OperatorPKIList, Resource<OperatorPKI>> operatorPKIs() {
+    return new OperatorPKIOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
+
+  @Override
+  public NamespacedCreateOnlyResourceOperationsImpl<PodSecurityPolicySelfSubjectReview, PodSecurityPolicySelfSubjectReview> podSecurityPolicySelfSubjectReviews() {
+    return new NamespacedCreateOnlyResourceOperationsImpl<>(getHttpClient(), getConfiguration(), SECURITY_OPENSHIFT_APIGROUP, V1_APIVERSION, HasMetadata.getPlural(PodSecurityPolicySelfSubjectReview.class), PodSecurityPolicySelfSubjectReview.class);
+  }
+
+  @Override
+  public NamespacedCreateOnlyResourceOperationsImpl<PodSecurityPolicySubjectReview, PodSecurityPolicySubjectReview> podSecurityPolicySubjectReviews() {
+    return new NamespacedCreateOnlyResourceOperationsImpl<>(getHttpClient(), getConfiguration(), SECURITY_OPENSHIFT_APIGROUP, V1_APIVERSION, HasMetadata.getPlural(PodSecurityPolicySubjectReview.class), PodSecurityPolicySubjectReview.class);
   }
 
   @Override
@@ -615,6 +509,21 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
   }
 
   @Override
+  public MixedOperation<TemplateInstance, TemplateInstanceList, Resource<TemplateInstance>> templateInstances() {
+    return new TemplateInstanceOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
+
+  @Override
+  public OpenShiftTunedAPIGroupDSL tuned() {
+    return adapt(OpenShiftTunedAPIGroupClient.class);
+  }
+
+  @Override
+  public NonNamespaceOperation<BrokerTemplateInstance, BrokerTemplateInstanceList, Resource<BrokerTemplateInstance>> brokerTemplateInstances() {
+    return new BrokerTemplateInstanceOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
+
+  @Override
   public MixedOperation<User, UserList, Resource<User>> users() {
     return new UserOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
   }
@@ -622,6 +531,11 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
   @Override
   public MixedOperation<ClusterRoleBinding, ClusterRoleBindingList, Resource<ClusterRoleBinding>> clusterRoleBindings() {
     return new ClusterRoleBindingOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
+
+  @Override
+  public MixedOperation<RoleBindingRestriction, RoleBindingRestrictionList, Resource<RoleBindingRestriction>> roleBindingRestrictions() {
+    return new RoleBindingRestrictionOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
   }
 
   @Override
@@ -644,45 +558,20 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
   }
 
   @Override
-  public FlowControlAPIGroupDSL flowControl() {
-    return delegate.flowControl();
-  }
-
-  @Override
   public VersionInfo getVersion() {
     final VersionInfo versionInfo = new OpenShiftClusterOperationsImpl(httpClient,
       getConfiguration(), OpenShiftClusterOperationsImpl.OPENSHIFT_VERSION_ENDPOINT).fetchVersion();
-    return versionInfo == null ? DefaultKubernetesClient.getVersion(this) : versionInfo;
+    return versionInfo == null ? super.getVersion() : versionInfo;
   }
 
   @Override
-  public V1APIGroupDSL v1() {
-    return adapt(V1APIGroupClient.class);
+  public MachineConfigurationAPIGroupDSL machineConfigurations() {
+    return adapt(OpenShiftMachineConfigurationAPIGroupClient.class);
   }
 
   @Override
-  public RunOperations run() {
-    return new RunOperations(httpClient, getConfiguration(), getNamespace(), new RunConfigBuilder());
-  }
-
-  @Override
-  public NonNamespaceOperation<RuntimeClass, RuntimeClassList, Resource<RuntimeClass>> runtimeClasses() {
-    return delegate.runtimeClasses();
-  }
-
-  @Override
-  public AdmissionRegistrationAPIGroupDSL admissionRegistration() {
-    return adapt(AdmissionRegistrationAPIGroupClient.class);
-  }
-
-  @Override
-  public AppsAPIGroupDSL apps() {
-    return adapt(AppsAPIGroupClient.class);
-  }
-
-  @Override
-  public AutoscalingAPIGroupDSL autoscaling() {
-    return adapt(AutoscalingAPIGroupClient.class);
+  public OpenShiftMachineAPIGroupDSL machine() {
+    return adapt(OpenShiftMachineAPIGroupClient.class);
   }
 
   @Override
@@ -704,41 +593,54 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
   }
 
   @Override
-  public NetworkAPIGroupDSL network() { return adapt(NetworkAPIGroupClient.class); }
+  public NonNamespaceOperation<HostSubnet, HostSubnetList, Resource<HostSubnet>> hostSubnets() {
+    return new HostSubnetOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
 
   @Override
-  public StorageAPIGroupDSL storage() { return adapt(StorageAPIGroupClient.class); }
+  public MixedOperation<BareMetalHost, BareMetalHostList, Resource<BareMetalHost>> bareMetalHosts() {
+    return new BareMetalHostOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
 
   @Override
   public InOutCreateable<SubjectAccessReview, SubjectAccessReviewResponse> subjectAccessReviews() {
-    return new OpenShiftSubjectAccessReviewOperationsImpl(httpClient, getConfiguration(), "authorization.openshift.io", "v1", HasMetadata.getPlural(SubjectAccessReview.class));
+    return new CreateOnlyResourceOperationsImpl<>(httpClient, getConfiguration(), AUTHORIZATION_OPENSHIFT_IO, V1_APIVERSION, HasMetadata.getPlural(SubjectAccessReview.class), SubjectAccessReviewResponse.class);
   }
 
   @Override
-  public OpenShiftLocalSubjectAccessReviewOperationsImpl localSubjectAccessReviews() {
-    return new OpenShiftLocalSubjectAccessReviewOperationsImpl(httpClient, getConfiguration(), "authorization.openshift.io", "v1", HasMetadata.getPlural(LocalSubjectAccessReview.class));
+  public InOutCreateable<ResourceAccessReview, ResourceAccessReviewResponse> resourceAccessReviews() {
+    return new CreateOnlyResourceOperationsImpl<>(httpClient, getConfiguration(), AUTHORIZATION_OPENSHIFT_IO, V1_APIVERSION, HasMetadata.getPlural(ResourceAccessReview.class), ResourceAccessReviewResponse.class);
   }
 
   @Override
-  public BatchAPIGroupDSL batch() { return adapt(BatchAPIGroupClient.class); }
+  public NamespacedCreateOnlyResourceOperationsImpl<LocalSubjectAccessReview, SubjectAccessReviewResponse> localSubjectAccessReviews() {
+    return new NamespacedCreateOnlyResourceOperationsImpl<>(httpClient, getConfiguration(), AUTHORIZATION_OPENSHIFT_IO, V1_APIVERSION, HasMetadata.getPlural(LocalSubjectAccessReview.class), SubjectAccessReviewResponse.class);
+  }
 
   @Override
-  public MetricAPIGroupDSL top() { return adapt(MetricAPIGroupClient.class); }
+  public NamespacedCreateOnlyResourceOperationsImpl<LocalResourceAccessReview, ResourceAccessReviewResponse> localResourceAccessReviews() {
+    return new NamespacedCreateOnlyResourceOperationsImpl<>(httpClient, getConfiguration(), AUTHORIZATION_OPENSHIFT_IO, V1_APIVERSION, HasMetadata.getPlural(LocalResourceAccessReview.class), ResourceAccessReviewResponse.class);
+  }
 
   @Override
-  public PolicyAPIGroupDSL policy() { return adapt(PolicyAPIGroupClient.class); }
+  public NamespacedCreateOnlyResourceOperationsImpl<SelfSubjectRulesReview, SelfSubjectRulesReview> selfSubjectRulesReviews() {
+    return new NamespacedCreateOnlyResourceOperationsImpl<>(httpClient, getConfiguration(), AUTHORIZATION_OPENSHIFT_IO, V1_APIVERSION, HasMetadata.getPlural(SelfSubjectRulesReview.class), SelfSubjectRulesReview.class);
+  }
 
   @Override
-  public RbacAPIGroupDSL rbac() { return adapt(RbacAPIGroupClient.class); }
+  public NamespacedCreateOnlyResourceOperationsImpl<SubjectRulesReview, SubjectRulesReview> subjectRulesReviews() {
+    return new NamespacedCreateOnlyResourceOperationsImpl<>(httpClient, getConfiguration(), AUTHORIZATION_OPENSHIFT_IO, V1_APIVERSION, HasMetadata.getPlural(SubjectRulesReview.class), SubjectRulesReview.class);
+  }
 
   @Override
-  public SchedulingAPIGroupDSL scheduling() { return adapt(SchedulingAPIGroupClient.class); }
+  public OpenShiftStorageVersionMigratorApiGroupDSL kubeStorageVersionMigrator() {
+    return adapt(OpenShiftStorageVersionMigratorApiGroupClient.class);
+  }
 
   @Override
-  public SharedInformerFactory informers() { return new SharedInformerFactory(ForkJoinPool.commonPool(), httpClient, getConfiguration()); }
-
-  @Override
-  public SharedInformerFactory informers(ExecutorService executorService) { return new SharedInformerFactory(executorService, httpClient, getConfiguration()); }
+  public NonNamespaceOperation<ClusterRole, ClusterRoleList, Resource<ClusterRole>> clusterRoles() {
+    return new ClusterRoleOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
 
   /**
    * {@inheritDoc}
@@ -746,14 +648,6 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
   @Override
   public LeaderElectorBuilder<NamespacedOpenShiftClient> leaderElector() {
     return new LeaderElectorBuilder<>(this);
-  }
-
-  /**
-   * {@inheritDoc}
-   */
-  @Override
-  public MixedOperation<Lease, LeaseList, Resource<Lease>> leases() {
-    return new LeaseOperationsImpl(httpClient, getConfiguration());
   }
 
   @Override
@@ -764,6 +658,26 @@ public class DefaultOpenShiftClient extends BaseClient implements NamespacedOpen
   @Override
   public User currentUser() {
     return users().withName("~").get();
+  }
+
+  @Override
+  public NonNamespaceOperation<Identity, IdentityList, Resource<Identity>> identities() {
+    return new IdentityOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
+
+  @Override
+  public InOutCreateable<UserIdentityMapping, UserIdentityMapping> userIdentityMappings() {
+    return new CreateOnlyResourceOperationsImpl<>(getHttpClient(), getConfiguration(), "user.openshift.io", "v1", HasMetadata.getPlural(UserIdentityMapping.class), UserIdentityMapping.class);
+  }
+
+  @Override
+  public NonNamespaceOperation<UserOAuthAccessToken, UserOAuthAccessTokenList, Resource<UserOAuthAccessToken>> userOAuthAccessTokens() {
+    return new UserOAuthAccessTokenOperationsImpl(httpClient, OpenShiftConfig.wrap(getConfiguration()));
+  }
+
+  @Override
+  public OpenShiftWhereaboutsAPIGroupDSL whereabouts() {
+    return adapt(OpenShiftWhereaboutsAPIGroupClient.class);
   }
 
   @Override

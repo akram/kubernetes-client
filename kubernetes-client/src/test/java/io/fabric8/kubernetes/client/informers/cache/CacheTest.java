@@ -20,12 +20,14 @@ import io.fabric8.kubernetes.api.model.PodBuilder;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class CacheTest {
   private static Cache cache = new Cache("mock", CacheTest::mockIndexFunction, CacheTest::mockKeyFunction);
@@ -34,8 +36,8 @@ class CacheTest {
   void testCacheIndex() {
     Pod testPodObj = new PodBuilder().withNewMetadata().withName("test-pod").endMetadata().build();
 
-    cache.add(testPodObj);
-    cache.replace(Arrays.asList(testPodObj), "0");
+    cache.put(testPodObj);
+    cache.replace(Arrays.asList(testPodObj));
 
     String index = mockIndexFunction(testPodObj).get(0);
     String key = mockKeyFunction(testPodObj);
@@ -49,6 +51,9 @@ class CacheTest {
     List<String> allExistingKeys = cache.listKeys();
     assertEquals(1, allExistingKeys.size());
     assertEquals(key, allExistingKeys.get(0));
+    
+    cache.replace(Collections.emptyList());
+    assertEquals(0, cache.byIndex("mock", "y").size());
   }
 
   @Test
@@ -56,18 +61,18 @@ class CacheTest {
     Pod testPodObj = new PodBuilder().withNewMetadata().withName("test-pod2").endMetadata().build();
     String index = mockIndexFunction(testPodObj).get(0);
 
-    cache.replace(Arrays.asList(testPodObj), "0");
-    cache.delete(testPodObj);
+    cache.replace(Arrays.asList(testPodObj));
+    cache.remove(testPodObj);
 
     List indexedObjectList = cache.byIndex("mock", index);
     assertEquals(0, indexedObjectList.size());
 
-    cache.add(testPodObj);
+    cache.put(testPodObj);
 
     // replace cached object with null value
     String newClusterName = "test_cluster";
     testPodObj.getMetadata().setClusterName(newClusterName);
-    cache.update(testPodObj);
+    cache.put(testPodObj);
 
     assertEquals(1, cache.list().size());
     assertEquals(newClusterName, testPodObj.getMetadata().getClusterName());
@@ -77,7 +82,7 @@ class CacheTest {
   void testDefaultNamespaceIndex() {
     Pod testPodObj = new PodBuilder().withNewMetadata().withName("test-pod3").withNamespace("default").endMetadata().build();
 
-    cache.add(testPodObj);
+    cache.put(testPodObj);
     List<String> indices = Cache.metaNamespaceIndexFunc(testPodObj);
     assertEquals(testPodObj.getMetadata().getNamespace(), indices.get(0));
   }
@@ -86,7 +91,8 @@ class CacheTest {
   void testDefaultNamespaceKey() {
     Pod testPodObj = new PodBuilder().withNewMetadata().withName("test-pod4").withNamespace("default").endMetadata().build();
 
-    cache.add(testPodObj);
+    cache.put(testPodObj);
+    assertEquals("", Cache.metaNamespaceKeyFunc(null));
     assertEquals("default/test-pod4", Cache.metaNamespaceKeyFunc(testPodObj));
     assertEquals("default/test-pod4", Cache.namespaceKeyFunc("default", "test-pod4"));
   }
@@ -113,7 +119,7 @@ class CacheTest {
       .withNewMetadata().withNamespace("test").withName("test-pod").withClusterName("test-cluster").endMetadata()
       .withNewSpec().withNodeName("test-node").endSpec()
       .build();
-    podCache.add(testPod);
+    podCache.put(testPod);
 
     List<Pod> namespaceIndexedPods = podCache.byIndex(Cache.NAMESPACE_INDEX, "test");
     assertEquals(1, namespaceIndexedPods.size());

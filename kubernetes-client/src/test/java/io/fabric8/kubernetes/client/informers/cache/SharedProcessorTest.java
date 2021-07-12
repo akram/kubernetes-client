@@ -36,19 +36,30 @@ class SharedProcessorTest {
     ExpectingNotificationHandler<Pod> expectUpdateHandler = new ExpectingNotificationHandler<>(updateNotification);
     ExpectingNotificationHandler<Pod> expectDeleteHandler = new ExpectingNotificationHandler<>(deleteNotification);
 
-    sharedProcessor.addAndStartListener(expectAddHandler);
-    sharedProcessor.addAndStartListener(expectUpdateHandler);
-    sharedProcessor.addAndStartListener(expectDeleteHandler);
+    sharedProcessor.addListener(expectAddHandler);
+    sharedProcessor.addListener(expectUpdateHandler);
+    sharedProcessor.addListener(expectDeleteHandler);
 
     sharedProcessor.distribute(addNotification, false);
     sharedProcessor.distribute(updateNotification, false);
     sharedProcessor.distribute(deleteNotification, false);
-    // Sleep for 1 second for distributing notifications
-    Thread.sleep(1000);
 
     assertTrue(expectAddHandler.isSatisfied());
     assertTrue(expectUpdateHandler.isSatisfied());
     assertTrue(expectDeleteHandler.isSatisfied());
+  }
+  
+  @Test
+  void testDistributeAfterStop() throws InterruptedException {
+    SharedProcessor<Pod> sharedProcessor = new SharedProcessor<>();
+    
+    sharedProcessor.stop();
+
+    Pod foo1 = new PodBuilder().withNewMetadata().withName("foo1").withNamespace("default").endMetadata().build();
+    ProcessorListener.Notification<Pod> addNotification = new ProcessorListener.AddNotification<>(foo1);
+
+    // nothing should happen
+    sharedProcessor.distribute(addNotification, false);
   }
 
   private static class ExpectingNotificationHandler<T> extends ProcessorListener<T> {

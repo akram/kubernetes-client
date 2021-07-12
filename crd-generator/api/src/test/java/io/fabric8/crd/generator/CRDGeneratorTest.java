@@ -44,6 +44,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+
 import org.junit.jupiter.api.Test;
 import org.opentest4j.AssertionFailedError;
 import org.slf4j.Logger;
@@ -167,7 +168,19 @@ class CRDGeneratorTest {
       final CustomResourceDefinitionVersion version = checkCRD(customResource, "Child", "children",
         Scope.NAMESPACED);
       assertNotNull(version.getSubresources());
+      final Map<String, JSONSchemaProps> specProps = version.getSchema().getOpenAPIV3Schema()
+        .getProperties().get("spec").getProperties();
+      assertEquals(3, specProps.size());
+      checkMapProp(specProps, "unsupported");
+      checkMapProp(specProps, "unsupported2");
+      checkMapProp(specProps, "supported");
     });
+  }
+
+  private void checkMapProp(Map<String, JSONSchemaProps> specProps, String name) {
+    final JSONSchemaProps props = specProps.get(name);
+    assertEquals("object", props.getType());
+    assertEquals("string", props.getAdditionalProperties().getSchema().getType());
   }
 
   @Test
@@ -191,12 +204,18 @@ class CRDGeneratorTest {
 
       final CustomResourceDefinitionVersion version = checkVersion(spec);
       assertNotNull(version.getSubresources());
+      // printer columns should be ordered in the alphabetical order of their json path
       final List<CustomResourceColumnDefinition> printerColumns = version
         .getAdditionalPrinterColumns();
-      assertEquals(1, printerColumns.size());
-      final CustomResourceColumnDefinition columnDefinition = printerColumns.get(0);
+      assertEquals(2, printerColumns.size());
+      CustomResourceColumnDefinition columnDefinition = printerColumns.get(0);
       assertEquals("string", columnDefinition.getType());
+      assertEquals(".spec.category", columnDefinition.getJsonPath());
       assertEquals("jokeCategory", columnDefinition.getName());
+      columnDefinition = printerColumns.get(1);
+      assertEquals("string", columnDefinition.getType());
+      assertEquals(".spec.excluded", columnDefinition.getJsonPath());
+      assertEquals("excludedTopics", columnDefinition.getName());
       CustomResourceValidation schema = version.getSchema();
       assertNotNull(schema);
       Map<String, JSONSchemaProps> properties = schema.getOpenAPIV3Schema().getProperties();

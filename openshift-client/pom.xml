@@ -21,7 +21,7 @@
   <parent>
     <groupId>io.fabric8</groupId>
     <artifactId>kubernetes-client-project</artifactId>
-    <version>5.4-SNAPSHOT</version>
+    <version>5.6-SNAPSHOT</version>
   </parent>
 
   <artifactId>openshift-client</artifactId>
@@ -62,6 +62,10 @@
    </dependency>
    <dependency>
       <groupId>io.fabric8</groupId>
+      <artifactId>openshift-model-clusterautoscaling</artifactId>
+    </dependency>
+   <dependency>
+      <groupId>io.fabric8</groupId>
       <artifactId>openshift-model-operator</artifactId>
     </dependency>
     <dependency>
@@ -70,11 +74,35 @@
     </dependency>
     <dependency>
       <groupId>io.fabric8</groupId>
+      <artifactId>openshift-model-machine</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.fabric8</groupId>
+      <artifactId>openshift-model-whereabouts</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.fabric8</groupId>
       <artifactId>openshift-model-monitoring</artifactId>
     </dependency>
     <dependency>
       <groupId>io.fabric8</groupId>
+      <artifactId>openshift-model-storageversionmigrator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.fabric8</groupId>
+      <artifactId>openshift-model-tuned</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.fabric8</groupId>
       <artifactId>openshift-model-console</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.fabric8</groupId>
+      <artifactId>openshift-model-machineconfig</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.fabric8</groupId>
+      <artifactId>openshift-model-miscellaneous</artifactId>
     </dependency>
 
     <!-- Compile Only Dependencies -->

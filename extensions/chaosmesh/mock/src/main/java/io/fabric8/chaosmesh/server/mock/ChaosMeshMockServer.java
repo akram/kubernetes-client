@@ -17,6 +17,7 @@ package io.fabric8.chaosmesh.server.mock;
 
 import io.fabric8.chaosmesh.client.ChaosMeshClient;
 import io.fabric8.chaosmesh.client.DefaultChaosMeshClient;
+import io.fabric8.chaosmesh.client.NamespacedChaosMeshClient;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.ConfigBuilder;
 import io.fabric8.kubernetes.client.server.mock.KubernetesMockServer;
@@ -29,7 +30,7 @@ import okhttp3.mockwebserver.MockWebServer;
 import java.util.Map;
 import java.util.Queue;
 
-import static okhttp3.TlsVersion.TLS_1_0;
+import static okhttp3.TlsVersion.TLS_1_2;
 
 public class ChaosMeshMockServer extends KubernetesMockServer {
   public ChaosMeshMockServer() {
@@ -49,12 +50,12 @@ public class ChaosMeshMockServer extends KubernetesMockServer {
     return new String[]{"/api", "/apis/chaos-mesh.org"};
   }
 
-  public ChaosMeshClient createChaosMesh() {
+  public NamespacedChaosMeshClient createChaosMeshClient() {
     Config config = new ConfigBuilder()
       .withMasterUrl(url("/"))
       .withNamespace("test")
       .withTrustCerts(true)
-      .withTlsVersions(TLS_1_0)
+      .withTlsVersions(TLS_1_2)
       .build();
     return new DefaultChaosMeshClient(config);
   }

@@ -18,116 +18,176 @@ package io.fabric8.kubernetes.client.informers.cache;
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.KubernetesResourceList;
 import io.fabric8.kubernetes.api.model.ListOptionsBuilder;
+import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.Watch;
+import io.fabric8.kubernetes.client.Watcher;
+import io.fabric8.kubernetes.client.WatcherException;
 import io.fabric8.kubernetes.client.dsl.base.OperationContext;
 import io.fabric8.kubernetes.client.informers.ListerWatcher;
+import io.fabric8.kubernetes.client.utils.Serialization;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class Reflector<T extends HasMetadata, L extends KubernetesResourceList<T>> {
 
   private static final Logger log = LoggerFactory.getLogger(Reflector.class);
-  private static final Long WATCH_RESTART_DELAY_MILLIS = 5000L;
 
-  private final AtomicReference<String> lastSyncResourceVersion;
+  private volatile String lastSyncResourceVersion;
   private final Class<T> apiTypeClass;
   private final ListerWatcher<T, L> listerWatcher;
-  private final Store<T> store;
+  private final SyncableStore<T> store;
   private final OperationContext operationContext;
-  private final long resyncPeriodMillis;
-  private final ScheduledExecutorService resyncExecutor;
-  private final ReflectorWatcher<T> watcher;
-  private final AtomicBoolean isActive;
-  private final AtomicBoolean isWatcherStarted;
+  private final ReflectorWatcher watcher;
+  private volatile boolean running;
+  private volatile boolean watching;
   private final AtomicReference<Watch> watch;
 
-  public Reflector(Class<T> apiTypeClass, ListerWatcher<T, L> listerWatcher, Store store, OperationContext operationContext, long resyncPeriodMillis) {
-    this(apiTypeClass, listerWatcher, store, operationContext, resyncPeriodMillis, Executors.newSingleThreadScheduledExecutor());
-  }
-
-  public Reflector(Class<T> apiTypeClass, ListerWatcher<T, L> listerWatcher, Store store, OperationContext operationContext, long resyncPeriodMillis, ScheduledExecutorService resyncExecutor) {
+  public Reflector(Class<T> apiTypeClass, ListerWatcher<T, L> listerWatcher, SyncableStore<T> store, OperationContext operationContext) {
     this.apiTypeClass = apiTypeClass;
     this.listerWatcher = listerWatcher;
     this.store = store;
     this.operationContext = operationContext;
-    this.resyncPeriodMillis = resyncPeriodMillis;
-    this.lastSyncResourceVersion = new AtomicReference<>();
-    this.resyncExecutor = resyncExecutor;
-    this.watcher = new ReflectorWatcher<>(store, lastSyncResourceVersion, this::startWatcher, this::reListAndSync);
-    this.isActive = new AtomicBoolean(true);
-    this.isWatcherStarted = new AtomicBoolean(false);
+    this.watcher = new ReflectorWatcher();
     this.watch = new AtomicReference<>(null);
   }
 
-  private L getList() {
+  protected L getList() {
     return listerWatcher.list(new ListOptionsBuilder()
       .withWatch(Boolean.FALSE)
       .withResourceVersion(null)
       .withTimeoutSeconds(null).build(), operationContext.getNamespace(), operationContext);
   }
 
-  public void listAndWatch() {
-    log.info("Started ReflectorRunnable watch for {}", apiTypeClass);
-    reListAndSync();
-    startWatcher();
+  public void stop() {
+    running = false;
+    stopWatcher();
   }
 
-  public void stop() {
-    isActive.set(false);
-    if (watch.get() != null) {
-      watch.get().close();
-      watch.set(null);
+  private synchronized void stopWatcher() {
+    Watch theWatch = watch.getAndSet(null);
+    if (theWatch != null) {
+      String ns = operationContext.getNamespace();
+      log.debug("Stopping watcher for resource {} v{} in namespace {}", apiTypeClass, lastSyncResourceVersion, ns);
+      theWatch.close();
+      watchStopped(); // proactively report as stopped
     }
   }
 
-  public long getResyncPeriodMillis() {
-    return resyncPeriodMillis;
-  }
-
-  private void reListAndSync() {
-    store.isPopulated(false);
+  /**
+   * <br>Starts the watch with a fresh store state.
+   * <br>Should be called only at start and when HttpGone is seen.
+   */
+  public void listSyncAndWatch() {
+    running = true;
     final L list = getList();
     final String latestResourceVersion = list.getMetadata().getResourceVersion();
+    lastSyncResourceVersion = latestResourceVersion;
     log.debug("Listing items ({}) for resource {} v{}", list.getItems().size(), apiTypeClass, latestResourceVersion);
-    lastSyncResourceVersion.set(latestResourceVersion);
-    store.replace(list.getItems(), latestResourceVersion);
-    if (!isActive.get()) {
-      resyncExecutor.shutdown();
-    }
+    store.replace(list.getItems());
+    startWatcher(latestResourceVersion);
   }
 
-  private void startWatcher() {
-    log.debug("Starting watcher for resource {} v{}", apiTypeClass, lastSyncResourceVersion.get());
-    if (watch.get() != null) {
-      log.debug("Stopping previous watcher");
-      watch.get().close();
-    }
-    if (isWatcherStarted.get()) {
-      log.debug("Watcher already started, delaying execution of new watcher");
-      try {
-        Thread.sleep(WATCH_RESTART_DELAY_MILLIS);
-      } catch (InterruptedException e) {
-        log.error("Reflector thread was interrupted");
-        Thread.currentThread().interrupt();
+  private synchronized void startWatcher(final String latestResourceVersion) {
+    if (!running) {
         return;
-      }
     }
-    if (isActive.get()) {
-      isWatcherStarted.set(true);
-      watch.set(
-        listerWatcher.watch(new ListOptionsBuilder()
-          .withWatch(Boolean.TRUE).withResourceVersion(lastSyncResourceVersion.get()).withTimeoutSeconds(null).build(),
-        operationContext.getNamespace(), operationContext, watcher)
-      );
-    }
+    log.debug("Starting watcher for resource {} v{}", apiTypeClass, latestResourceVersion);
+    // there's no need to stop the old watch, that will happen automatically when this call completes
+    watch.set(
+      listerWatcher.watch(new ListOptionsBuilder()
+        .withWatch(Boolean.TRUE).withResourceVersion(latestResourceVersion).withTimeoutSeconds(null).build(),
+      operationContext.getNamespace(), operationContext, watcher));
+    watching = true;
+  }
+  
+  private synchronized void watchStopped() {
+    watching = false;
   }
 
   public String getLastSyncResourceVersion() {
-    return lastSyncResourceVersion.get();
+    return lastSyncResourceVersion;
   }
+  
+  public boolean isRunning() {
+    return running;
+  }
+  
+  public boolean isWatching() {
+    return watching;
+  }
+  
+  class ReflectorWatcher implements Watcher<T> {
+
+    @Override
+    public void eventReceived(Action action, T resource) {
+      if (action == null) {
+        throw new KubernetesClientException("Unrecognized event");
+      }
+      if (resource == null) {
+        throw new KubernetesClientException("Unrecognized resource");  
+      }
+      // the WatchEvent deserialization is not specifically typed
+      // modify the type here if needed
+      if (!apiTypeClass.isAssignableFrom(resource.getClass())) {
+        resource = Serialization.jsonMapper().convertValue(resource, apiTypeClass);
+      }
+      if (log.isDebugEnabled()) {
+        log.debug("Event received {} {}# resourceVersion {}", action.name(), resource.getKind(), resource.getMetadata().getResourceVersion());
+      }
+      switch (action) {
+        case ERROR:
+          throw new KubernetesClientException("ERROR event");
+        case ADDED:
+          store.add(resource);
+          break;
+        case MODIFIED:
+          store.update(resource);
+          break;
+        case DELETED:
+          store.delete(resource);
+          break;
+      }
+      lastSyncResourceVersion = resource.getMetadata().getResourceVersion();
+    }
+
+    @Override
+    public void onClose(WatcherException exception) {
+      // this close was triggered by an exception,
+      // not the user, it is expected that the watch retry will handle this
+      boolean restarted = false;
+      try {
+        if (exception.isHttpGone()) {
+          log.debug("Watch restarting due to http gone");
+          listSyncAndWatch();
+          restarted = true;
+        } else {
+          log.warn("Watch closing with exception", exception);
+          running = false; // shouldn't happen, but it means the watch won't restart
+        }
+      } finally {
+        if (!restarted) {
+          watchStopped(); // report the watch as stopped after a problem
+        }
+      }
+    }
+
+    @Override
+    public void onClose() {
+      watchStopped();
+      log.debug("Watch gracefully closed");
+    }
+
+    @Override
+    public boolean reconnecting() {
+      return true;
+    }
+    
+  }
+  
+  public ReflectorWatcher getWatcher() {
+    return watcher;
+  }
+
 }

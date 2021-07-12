@@ -19,9 +19,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.fabric8.crd.generator.AbstractJsonSchema;
 import io.fabric8.kubernetes.api.model.apiextensions.v1.JSONSchemaProps;
 import io.fabric8.kubernetes.api.model.apiextensions.v1.JSONSchemaPropsBuilder;
-import io.sundr.codegen.model.Property;
-import io.sundr.codegen.model.TypeDef;
-import io.sundr.codegen.model.TypeRef;
+import io.sundr.model.Property;
+import io.sundr.model.TypeDef;
+import io.sundr.model.TypeRef;
 import java.util.List;
 
 public class JsonSchema extends AbstractJsonSchema<JSONSchemaProps, JSONSchemaPropsBuilder> {
@@ -67,12 +67,24 @@ public class JsonSchema extends AbstractJsonSchema<JSONSchemaProps, JSONSchemaPr
   }
 
   @Override
-  protected JSONSchemaProps collectionProperty(JSONSchemaProps schema) {
+  protected JSONSchemaProps arrayLikeProperty(JSONSchemaProps schema) {
     return new JSONSchemaPropsBuilder()
       .withType("array")
       .withNewItems()
       .withSchema(schema)
       .and()
+      .build();
+  }
+
+  @Override
+  protected JSONSchemaProps mapLikeProperty() {
+    return new JSONSchemaPropsBuilder()
+      .withType("object")
+      .withNewAdditionalProperties()
+      .withNewSchema()
+      .withType("string")
+      .endSchema()
+      .endAdditionalProperties()
       .build();
   }
 

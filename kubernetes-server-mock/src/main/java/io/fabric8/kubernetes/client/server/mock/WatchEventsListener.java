@@ -18,6 +18,7 @@ package io.fabric8.kubernetes.client.server.mock;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.fabric8.kubernetes.api.model.KubernetesResource;
 import io.fabric8.kubernetes.api.model.WatchEvent;
+import io.fabric8.kubernetes.client.Watcher;
 import io.fabric8.kubernetes.client.utils.Serialization;
 import io.fabric8.mockwebserver.Context;
 import io.fabric8.mockwebserver.crud.AttributeSet;
@@ -74,7 +75,7 @@ class WatchEventsListener extends WebSocketListener {
     try {
       executor.awaitTermination(1, TimeUnit.MINUTES);
     } catch (InterruptedException e) {
-      logger.debug(e.getLocalizedMessage());
+      logger.debug("Interrupted waiting for the executor service to shutdown: {}", e.getMessage());
       Thread.currentThread().interrupt();
     }
     watchEventListenerList.remove(this);
@@ -87,15 +88,15 @@ class WatchEventsListener extends WebSocketListener {
     try {
       executor.awaitTermination(1, TimeUnit.MINUTES);
     } catch (InterruptedException e) {
-      logger.debug(e.getLocalizedMessage());
+      logger.debug("Interrupted waiting for the executor service to shutdown: {}", e.getMessage());
       Thread.currentThread().interrupt();
     }
     watchEventListenerList.remove(this);
   }
 
 
-  public void sendWebSocketResponse(String object, String eventType) {
-    WebSocketMessage message = toWebSocketMessage(context, new WatchEvent(Serialization.unmarshal(object, KubernetesResource.class), eventType));
+  public void sendWebSocketResponse(String object, Watcher.Action action) {
+    WebSocketMessage message = toWebSocketMessage(context, new WatchEvent(Serialization.unmarshal(object, KubernetesResource.class), action.name()));
     executor.schedule(() -> webSocketRef.get().send(message.getBody()), message.getDelay(), TimeUnit.SECONDS);
   }
 

@@ -17,11 +17,11 @@ package io.fabric8.kubernetes.client.dsl.base;
 
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.fabric8.kubernetes.api.model.DeleteOptions;
 import io.fabric8.kubernetes.api.model.DeletionPropagation;
 import io.fabric8.kubernetes.api.model.HasMetadata;
+import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.Status;
 import io.fabric8.kubernetes.api.model.StatusBuilder;
 import io.fabric8.kubernetes.api.model.autoscaling.v1.Scale;
@@ -29,6 +29,7 @@ import io.fabric8.kubernetes.api.model.extensions.DeploymentRollback;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.internal.VersionUsageUtils;
+import io.fabric8.kubernetes.client.utils.ExponentialBackoffIntervalCalculator;
 import io.fabric8.kubernetes.client.utils.Serialization;
 import io.fabric8.kubernetes.client.utils.URLUtils;
 import io.fabric8.kubernetes.client.utils.Utils;
@@ -39,6 +40,8 @@ import okhttp3.Request;
 import okhttp3.RequestBody;
 import okhttp3.Response;
 import okhttp3.ResponseBody;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -55,9 +58,12 @@ public class OperationSupport {
   public static final MediaType JSON = MediaType.parse("application/json");
   public static final MediaType JSON_PATCH = MediaType.parse("application/json-patch+json");
   public static final MediaType STRATEGIC_MERGE_JSON_PATCH = MediaType.parse("application/strategic-merge-patch+json");
+  public static final MediaType JSON_MERGE_PATCH = MediaType.parse("application/merge-patch+json");
   protected static final ObjectMapper JSON_MAPPER = Serialization.jsonMapper();
   protected static final ObjectMapper YAML_MAPPER = Serialization.yamlMapper();
+  private static final Logger LOG = LoggerFactory.getLogger(OperationSupport.class);
   private static final String CLIENT_STATUS_FLAG = "CLIENT_STATUS_FLAG";
+  private static final int maxRetryIntervalExponent = 5;
 
   protected OperationContext context;
   protected final OkHttpClient client;
@@ -68,6 +74,8 @@ public class OperationSupport {
   protected String apiGroupName;
   protected String apiGroupVersion;
   protected boolean dryRun;
+  private final ExponentialBackoffIntervalCalculator retryIntervalCalculator;
+  private final int requestRetryBackoffLimit;
 
   public OperationSupport() {
     this (new OperationContext());
@@ -97,13 +105,23 @@ public class OperationSupport {
     } else {
       this.apiGroupVersion = "v1";
     }
+
+    final int requestRetryBackoffInterval;
+    if (ctx.getConfig() != null) {
+      requestRetryBackoffInterval = ctx.getConfig().getRequestRetryBackoffInterval();
+      this.requestRetryBackoffLimit = ctx.getConfig().getRequestRetryBackoffLimit();
+    } else {
+      requestRetryBackoffInterval = Config.DEFAULT_REQUEST_RETRY_BACKOFFINTERVAL;
+      this.requestRetryBackoffLimit = Config.DEFAULT_REQUEST_RETRY_BACKOFFLIMIT;
+    }
+    this.retryIntervalCalculator = new ExponentialBackoffIntervalCalculator(requestRetryBackoffInterval, maxRetryIntervalExponent);
   }
 
-  public String getAPIGroup() {
+  public String getAPIGroupName() {
     return apiGroupName;
   }
 
-  public String getAPIVersion() {
+  public String getAPIGroupVersion() {
     return apiGroupVersion;
   }
 
@@ -154,8 +172,18 @@ public class OperationSupport {
   }
 
   public URL getResourceUrl(String namespace, String name) throws MalformedURLException {
+    return getResourceUrl(namespace, name, false);
+  }
+  
+  public URL getResourceUrl(String namespace, String name, boolean status) throws MalformedURLException {
     if (name == null) {
+      if (status) {
+        throw new KubernetesClientException("name not specified for an operation requiring one.");
+      }
       return getNamespacedUrl(namespace);
+    }
+    if (status) {
+      return new URL(URLUtils.join(getNamespacedUrl(namespace).toString(), name, "status"));
     }
     return new URL(URLUtils.join(getNamespacedUrl(namespace).toString(), name));
   }
@@ -174,6 +202,23 @@ public class OperationSupport {
     return resourceURL;
   }
 
+  public URL getResourceURLForPatchOperation(URL resourceUrl, PatchContext patchContext) throws MalformedURLException {
+    if (patchContext != null) {
+      String url = resourceUrl.toString();
+      if (patchContext.getForce() != null) {
+        url = URLUtils.join(url, "?force=" + patchContext.getForce());
+      }
+      if ((patchContext.getDryRun() != null && !patchContext.getDryRun().isEmpty()) || dryRun) {
+        url = URLUtils.join(url, "?dryRun=All");
+      }
+      if (patchContext.getFieldManager() != null) {
+        url = URLUtils.join(url, "?fieldManager=" + patchContext.getFieldManager());
+      }
+      return new URL(url);
+    }
+    return resourceUrl;
+  }
+
   protected <T> String checkNamespace(T item) {
     String operationNs = getNamespace();
     String itemNs = (item instanceof HasMetadata && ((HasMetadata)item).getMetadata() != null) ? ((HasMetadata) item).getMetadata().getNamespace() : null;
@@ -181,7 +226,7 @@ public class OperationSupport {
       if (!isResourceNamespaced()) {
         return null;
       } else {
-        throw new KubernetesClientException("Namespace not specified. But operation requires namespace.");
+        throw new KubernetesClientException("namespace not specified for an operation requiring one.");
       }
     } else if (Utils.isNullOrEmpty(itemNs)) {
       return operationNs;
@@ -195,7 +240,8 @@ public class OperationSupport {
 
   protected <T> String checkName(T item) {
     String operationName = getName();
-    String itemName = item instanceof HasMetadata ? ((HasMetadata) item).getMetadata().getName() : null;
+    ObjectMeta metadata = item instanceof HasMetadata ? ((HasMetadata) item).getMetadata() : null;
+    String itemName = metadata != null ? metadata.getName() : null;
     if (Utils.isNullOrEmpty(operationName) && Utils.isNullOrEmpty(itemName)) {
       return null;
     } else if (Utils.isNullOrEmpty(itemName)) {
@@ -269,6 +315,7 @@ public class OperationSupport {
    *
    * @param updated updated object
    * @param type type of the object provided
+   * @param status if this is only the status subresource
    * @param <T> template argument provided
    *
    * @return returns de-serialized version of api server response
@@ -276,16 +323,17 @@ public class OperationSupport {
    * @throws InterruptedException Interrupted Exception
    * @throws IOException IOException
    */
-  protected <T> T handleReplace(T updated, Class<T> type) throws ExecutionException, InterruptedException, IOException {
-    return handleReplace(updated, type, Collections.<String, String>emptyMap());
+  protected <T> T handleUpdate(T updated, Class<T> type, boolean status) throws ExecutionException, InterruptedException, IOException {
+    return handleUpdate(updated, type, Collections.<String, String>emptyMap(), status);
   }
 
   /**
-   * Replace a resource, optionally performing placeholder substitution to the response.
+   * Update a resource, optionally performing placeholder substitution to the response.
    *
    * @param updated updated object
    * @param type type of object provided
    * @param parameters a HashMap containing parameters for processing object
+   * @param status if this is only the status subresource
    * @param <T> template argument provided
    *
    * @return returns de-serialized version of api server response.
@@ -293,24 +341,22 @@ public class OperationSupport {
    * @throws InterruptedException Interrupted Exception
    * @throws IOException IOException
    */
-  protected <T> T handleReplace(T updated, Class<T> type, Map<String, String> parameters) throws ExecutionException, InterruptedException, IOException {
+  protected <T> T handleUpdate(T updated, Class<T> type, Map<String, String> parameters, boolean status) throws ExecutionException, InterruptedException, IOException {
     RequestBody body = RequestBody.create(JSON, JSON_MAPPER.writeValueAsString(updated));
-    Request.Builder requestBuilder = new Request.Builder().put(body).url(getResourceURLForWriteOperation(getResourceUrl(checkNamespace(updated), checkName(updated))));
+    Request.Builder requestBuilder = new Request.Builder().put(body).url(getResourceURLForWriteOperation(getResourceUrl(checkNamespace(updated), checkName(updated), status)));
     return handleResponse(requestBuilder, type, parameters);
-  }
-
-  protected <T> T handleStatusUpdate(T updated, Class<T> type) throws ExecutionException, InterruptedException, KubernetesClientException, IOException {
-    RequestBody body = RequestBody.create(JSON, JSON_MAPPER.writeValueAsString(updated));
-    Request.Builder requestBuilder = new Request.Builder().put(body).url(getResourceUrl(checkNamespace(updated), checkName(updated)) + "/status");
-    return handleResponse(requestBuilder, type);
   }
 
   /**
    * Send an http patch and handle the response.
+   * 
+   * If current is not null and patchContext does not specify a patch type, then a JSON patch is assumed.  Otherwise a STRATEGIC MERGE is assumed.
    *
+   * @param patchContext patch options for patch request
    * @param current current object
    * @param updated updated object
    * @param type type of object
+   * @param status if this is only the status subresource
    * @param <T> template argument provided
    *
    * @return returns de-serialized version of api server response
@@ -318,11 +364,18 @@ public class OperationSupport {
    * @throws InterruptedException Interrupted Exception
    * @throws IOException IOException
    */
-  protected <T> T handlePatch(T current, T updated, Class<T> type) throws ExecutionException, InterruptedException, IOException {
-    JsonNode diff = JsonDiff.asJson(patchMapper().valueToTree(current), patchMapper().valueToTree(updated));
-    RequestBody body = RequestBody.create(JSON_PATCH, JSON_MAPPER.writeValueAsString(diff));
-    Request.Builder requestBuilder = new Request.Builder().patch(body).url(getResourceURLForWriteOperation(getResourceUrl(checkNamespace(updated), checkName(updated))));
-    return handleResponse(requestBuilder, type, Collections.<String, String>emptyMap());
+  protected <T> T handlePatch(PatchContext patchContext, T current, T updated, Class<T> type, boolean status) throws ExecutionException, InterruptedException, IOException {
+    String patchForUpdate = null;
+    if (current != null && (patchContext == null || patchContext.getPatchType() == PatchType.JSON)) {
+      patchForUpdate = JSON_MAPPER.writeValueAsString(JsonDiff.asJson(patchMapper().valueToTree(current), patchMapper().valueToTree(updated)));
+      if (patchContext == null) {
+        patchContext = new PatchContext.Builder().withPatchType(PatchType.JSON).build();
+      }
+    } else {
+      patchForUpdate = Serialization.asJson(updated);
+      current = updated; // use the updated to determine the path
+    }
+    return handlePatch(patchContext, current, patchForUpdate, type, status);
   }
 
   /**
@@ -339,9 +392,29 @@ public class OperationSupport {
    * @throws IOException IOException
    */
   protected <T> T handlePatch(T current, Map<String, Object> patchForUpdate, Class<T> type) throws ExecutionException, InterruptedException, IOException {
-    RequestBody body = RequestBody.create(STRATEGIC_MERGE_JSON_PATCH, JSON_MAPPER.writeValueAsString(patchForUpdate));
-    Request.Builder requestBuilder = new Request.Builder().patch(body).url(getResourceUrl(checkNamespace(current), checkName(current)));
-    return handleResponse(requestBuilder, type, Collections.<String, String>emptyMap());
+    return handlePatch(new PatchContext.Builder().withPatchType(PatchType.STRATEGIC_MERGE).build(), current,
+        JSON_MAPPER.writeValueAsString(patchForUpdate), type, false);
+  }
+
+  /**
+   * Send an http patch and handle the response.
+   *
+   * @param patchContext patch options for patch request
+   * @param current current object
+   * @param patchForUpdate Patch string
+   * @param type type of object
+   * @param status if this is only the status subresource
+   * @param <T> template argument provided
+   * @return returns de-serialized version of api server response
+   * @throws ExecutionException Execution Exception
+   * @throws InterruptedException Interrupted Exception
+   * @throws IOException IOException in case of network errors
+   */
+  protected <T> T handlePatch(PatchContext patchContext, T current, String patchForUpdate, Class<T> type, boolean status) throws ExecutionException, InterruptedException, IOException {
+    MediaType bodyMediaType = getMediaTypeFromPatchContextOrDefault(patchContext);
+    RequestBody body = RequestBody.create(bodyMediaType, patchForUpdate);
+    Request.Builder requestBuilder = new Request.Builder().patch(body).url(getResourceURLForPatchOperation(getResourceUrl(checkNamespace(current), checkName(current), status), patchContext));
+    return handleResponse(requestBuilder, type, Collections.emptyMap());
   }
 
   /**
@@ -482,7 +555,7 @@ public class OperationSupport {
   protected <T> T handleResponse(OkHttpClient client, Request.Builder requestBuilder, Class<T> type, Map<String, String> parameters) throws ExecutionException, InterruptedException, IOException {
     VersionUsageUtils.log(this.resourceT, this.apiGroupVersion);
     Request request = requestBuilder.build();
-    Response response = client.newCall(request).execute();
+    Response response = retryWithExponentialBackoff(client, request);
     try (ResponseBody body = response.body()) {
       assertResponseCode(request, response);
       if (type != null) {
@@ -501,6 +574,31 @@ public class OperationSupport {
       if(response != null && response.body() != null) {
         response.body().close();
       }
+    }
+  }
+
+  protected Response retryWithExponentialBackoff(OkHttpClient client, Request request) throws InterruptedException, IOException {
+    int numRetries = 0;
+    long retryInterval;
+    while (true) {
+      try {
+        Response response = client.newCall(request).execute();
+        if (numRetries < requestRetryBackoffLimit && response.code() >= 500) {
+          retryInterval = retryIntervalCalculator.getInterval(numRetries);
+          LOG.debug("HTTP operation on url: {} should be retried as the response code was {}, retrying after {} millis", request.url(), response.code(), retryInterval);
+        } else {
+          return response;
+        }
+      } catch (IOException ie) {
+        if (numRetries < requestRetryBackoffLimit) {
+          retryInterval = retryIntervalCalculator.getInterval(numRetries);
+          LOG.debug(String.format("HTTP operation on url: %s should be retried after %d millis because of IOException", request.url(), retryInterval), ie);
+        } else {
+          throw ie;
+        }
+      }
+      Thread.sleep(retryInterval);
+      numRetries++;
     }
   }
 
@@ -610,5 +708,12 @@ public class OperationSupport {
 
   public Config getConfig() {
     return config;
+  }
+
+  private MediaType getMediaTypeFromPatchContextOrDefault(PatchContext patchContext) {
+    if (patchContext != null && patchContext.getPatchType() != null) {
+      return patchContext.getPatchType().getMediaType();
+    }
+    return STRATEGIC_MERGE_JSON_PATCH;
   }
 }

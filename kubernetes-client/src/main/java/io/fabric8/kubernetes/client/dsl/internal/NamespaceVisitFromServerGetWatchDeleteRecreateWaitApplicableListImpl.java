@@ -16,6 +16,7 @@
 package io.fabric8.kubernetes.client.dsl.internal;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import io.fabric8.kubernetes.api.builder.TypedVisitor;
 import io.fabric8.kubernetes.api.builder.VisitableBuilder;
 import io.fabric8.kubernetes.api.builder.Visitor;
@@ -25,14 +26,11 @@ import io.fabric8.kubernetes.api.model.KubernetesList;
 import io.fabric8.kubernetes.api.model.KubernetesResourceList;
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
 import io.fabric8.kubernetes.client.Config;
-import io.fabric8.kubernetes.client.Handlers;
-import io.fabric8.kubernetes.client.HasMetadataVisitiableBuilder;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.KubernetesClientTimeoutException;
 import io.fabric8.kubernetes.client.ResourceHandler;
 import io.fabric8.kubernetes.client.dsl.*;
 import io.fabric8.kubernetes.client.dsl.base.OperationSupport;
-import io.fabric8.kubernetes.client.handlers.KubernetesListHandler;
 import io.fabric8.kubernetes.client.internal.readiness.Readiness;
 import io.fabric8.kubernetes.client.utils.Serialization;
 import io.fabric8.kubernetes.client.utils.Utils;
@@ -50,18 +48,17 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 
 import static io.fabric8.kubernetes.client.utils.CreateOrReplaceHelper.createOrReplaceItem;
 import static io.fabric8.kubernetes.client.utils.DeleteAndCreateHelper.deleteAndCreateItem;
+import static io.fabric8.kubernetes.client.dsl.internal.NamespaceVisitFromServerGetWatchDeleteRecreateWaitApplicableImpl.handlerOf;
 
 public class NamespaceVisitFromServerGetWatchDeleteRecreateWaitApplicableListImpl extends OperationSupport implements ParameterNamespaceListVisitFromServerGetDeleteRecreateWaitApplicable<HasMetadata>,
 Waitable<List<HasMetadata>, HasMetadata>, Readiable {
@@ -86,116 +83,64 @@ Waitable<List<HasMetadata>, HasMetadata>, Readiable {
     private final Boolean cascading;
 
   @Override
-  public List<HasMetadata> waitUntilReady(final long amount, final TimeUnit timeUnit) throws InterruptedException {
-    List<HasMetadata> items = acceptVisitors(asHasMetadata(item, true), visitors);
-    if (items.isEmpty()) {
-      return Collections.emptyList();
-    }
-
-    final List<HasMetadata> result = new ArrayList<>();
-    final List<HasMetadata> itemsWithConditionNotMatched = new ArrayList<>(items);
-    final int size = items.size();
-    final ExecutorService executor = Executors.newFixedThreadPool(size);
-
-    try {
-      final CountDownLatch latch = new CountDownLatch(size);
-      for (final HasMetadata meta : items) {
-        final ResourceHandler<HasMetadata, HasMetadataVisitiableBuilder> h = handlerOf(meta);
-        if (!executor.isShutdown()) {
-          executor.submit(() -> {
-            try {
-              result.add(h.waitUntilReady(client, config, meta.getMetadata().getNamespace(), meta, amount, timeUnit));
-            } catch (InterruptedException | IllegalArgumentException interruptedException) {
-              // We may get here if waiting is interrupted or resource doesn't support concept of readiness.
-              // We don't want to wait for items that will never become ready
-              // Skip that resource then.
-              LOGGER.info("{} {} does not support readiness. skipping..", meta.getKind(), meta.getMetadata().getName());
-              latch.countDown();
-            } catch (IllegalStateException t) {
-              logAsNotReady(t, meta);
-            } finally {
-              // Resource got ready and was returned properly
-              latch.countDown();
-            }
-          });
-        }
-      }
-      latch.await(amount, timeUnit);
-      if (latch.getCount() == 0) {
-        return result;
-      } else {
-        throw new KubernetesClientTimeoutException(itemsWithConditionNotMatched, amount, timeUnit);
-      }
-    } finally {
-      executor.shutdown();
-    }
+  public List<HasMetadata> waitUntilReady(final long amount, final TimeUnit timeUnit) {
+    return waitUntilCondition(resource -> Objects.nonNull(resource) && getReadiness().isReady(resource), amount, timeUnit);
   }
 
   @Override
   public List<HasMetadata> waitUntilCondition(Predicate<HasMetadata> condition,
                                               long amount,
-                                              TimeUnit timeUnit) throws InterruptedException {
+                                              TimeUnit timeUnit) {
     List<HasMetadata> items = acceptVisitors(asHasMetadata(item, true), visitors);
     if (items.isEmpty()) {
       return Collections.emptyList();
     }
-
-    final List<CompletableFuture<HasMetadata>> futures = new ArrayList<>(items.size());
-    for (final HasMetadata meta : items) {
-      final ResourceHandler<HasMetadata, HasMetadataVisitiableBuilder> h = handlerOf(meta);
-      futures.add(CompletableFuture.supplyAsync(() -> {
-        try {
-          return h.waitUntilCondition(client, config, meta.getMetadata().getNamespace(), meta, condition, amount, timeUnit);
-        } catch (Exception e) {
-          //consider all errors as not ready.
-          logAsNotReady(e, meta);
-          return null;
-        }
-      }));
-    }
-
+    // this strategy is very costly in terms of threads - by not exposing the underlying futures
+    // we have to create a thread for each item that mostly waits
+    final ExecutorService executor = Executors.newFixedThreadPool(items.size(), Utils.daemonThreadFactory(this));
     try {
-      // All of the individual futures have the same timeout period,
-      // but they may not all necessarily start executing together.
-      CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).get(amount, timeUnit);
-    } catch (TimeoutException | ExecutionException e) {
-      // We don't allow individual futures to complete with an exception,
-      // which means we should never catch ExecutionException here.
-      LOGGER.debug("Global timeout reached", e);
-    }
-
-    final List<HasMetadata> results = new ArrayList<>();
-    final List<HasMetadata> itemsWithConditionNotMatched = new ArrayList<>();
-
-    // Iterate over the items because we don't know what kind of List it is.
-    // But the futures use an ArrayList, so accessing by index is efficient.
-    int i = 0;
-    for (final HasMetadata meta : items) {
-      try {
-        CompletableFuture<HasMetadata> future = futures.get(i);
-        HasMetadata result = future.getNow(null);
-        if (result != null) {
-          results.add(result);
-        } else {
-          // Cancel this future, just in case it never had
-          // an opportunity to execute in the first place.
-          future.cancel(true);
-          itemsWithConditionNotMatched.add(meta);
-        }
-      } catch (CompletionException e) {
-        // We should never reach here, because individual futures
-        // aren't allowed to complete with an exception.
-        itemsWithConditionNotMatched.add(meta);
-        logAsNotReady(e.getCause(), meta);
+      final List<CompletableFuture<HasMetadata>> futures = new ArrayList<>(items.size());
+      for (final HasMetadata meta : items) {
+        final ResourceHandler<HasMetadata, ?> h = handlerOf(meta);
+        futures.add(CompletableFuture.supplyAsync(() -> {
+          try {
+            return h.waitUntilCondition(client, config, meta.getMetadata().getNamespace(), meta, condition, amount, timeUnit);
+          } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+          }
+        }, executor));
       }
-      ++i;
+  
+      final List<HasMetadata> results = new ArrayList<>();
+      final List<HasMetadata> itemsWithConditionNotMatched = new ArrayList<>();
+  
+      // Iterate over the items because we don't know what kind of List it is.
+      // But the futures use an ArrayList, so accessing by index is efficient.
+      int i = 0;
+      for (final HasMetadata meta : items) {
+        try {
+          CompletableFuture<HasMetadata> future = futures.get(i);
+          // just get each result as the timeout is enforced below
+          results.add(future.get());
+        } catch (ExecutionException e) {
+          itemsWithConditionNotMatched.add(meta);
+          logAsNotReady(e.getCause(), meta);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw KubernetesClientException.launderThrowable(e);
+        }
+        ++i;
+      }
+  
+      if (!itemsWithConditionNotMatched.isEmpty()) {
+        throw new KubernetesClientTimeoutException(itemsWithConditionNotMatched, amount, timeUnit);
+      }
+  
+      return results;
+    } finally {
+      executor.shutdownNow();
     }
-
-    if (!itemsWithConditionNotMatched.isEmpty()) {
-      throw new KubernetesClientTimeoutException(itemsWithConditionNotMatched, amount, timeUnit);
-    }
-
-    return results;
   }
 
   private static void logAsNotReady(Throwable t, HasMetadata meta) {
@@ -291,7 +236,7 @@ Waitable<List<HasMetadata>, HasMetadata>, Readiable {
   public List<HasMetadata> createOrReplace() {
     List<HasMetadata> result = new ArrayList<>();
     for (HasMetadata meta : acceptVisitors(asHasMetadata(item, true), visitors)) {
-      ResourceHandler<HasMetadata, HasMetadataVisitiableBuilder> h = handlerOf(meta);
+      ResourceHandler<HasMetadata, ?> h = handlerOf(meta);
       String namespaceToUse = meta.getMetadata().getNamespace();
 
       HasMetadata createdItem = createOrReplaceOrDeleteExisting(meta, h, namespaceToUse, dryRun);
@@ -318,7 +263,7 @@ Waitable<List<HasMetadata>, HasMetadata>, Readiable {
 
         //Second pass do delete
         for (HasMetadata meta :  acceptVisitors(asHasMetadata(item, true), visitors)) {
-            ResourceHandler<HasMetadata, HasMetadataVisitiableBuilder> h = handlerOf(meta);
+            ResourceHandler<HasMetadata, ?> h = handlerOf(meta);
             if (!h.delete(client, config, meta.getMetadata().getNamespace(), propagationPolicy, gracePeriodSeconds, meta, dryRun)) {
                 return false;
             }
@@ -331,7 +276,7 @@ Waitable<List<HasMetadata>, HasMetadata>, Readiable {
         if (fromServer) {
             List<HasMetadata> result = new ArrayList<>();
             for (HasMetadata meta : acceptVisitors(asHasMetadata(item, true), visitors)) {
-                ResourceHandler<HasMetadata, ? extends VisitableBuilder> h = handlerOf(meta);
+                ResourceHandler<HasMetadata, ?> h = handlerOf(meta);
                 HasMetadata reloaded = h.reload(client, config, meta.getMetadata().getNamespace(), meta);
                 if (reloaded != null) {
                     HasMetadata edited = reloaded;
@@ -351,7 +296,7 @@ Waitable<List<HasMetadata>, HasMetadata>, Readiable {
     private static List<HasMetadata> acceptVisitors(List<HasMetadata> list, List<Visitor> visitors) {
         List<HasMetadata> result = new ArrayList<>();
         for (HasMetadata item : list) {
-            ResourceHandler<HasMetadata, HasMetadataVisitiableBuilder> h = handlerOf(item);
+            ResourceHandler<HasMetadata, ?> h = handlerOf(item);
             VisitableBuilder<HasMetadata, ?> builder = h.edit(item);
 
             //Let's apply any visitor that might have been specified.
@@ -437,17 +382,7 @@ Waitable<List<HasMetadata>, HasMetadata>, Readiable {
     return result;
   }
 
-  private static <T> ResourceHandler handlerOf(T item) {
-    if (item instanceof HasMetadata) {
-      return Handlers.<HasMetadata, HasMetadataVisitiableBuilder>get(((HasMetadata) item).getKind(), ((HasMetadata) item).getApiVersion());
-    } else if (item instanceof KubernetesList) {
-      return new KubernetesListHandler();
-    }  else {
-      throw new IllegalArgumentException("Could not find a registered handler for item: [" + item + "].");
-    }
-  }
-
-  private HasMetadata createOrReplaceOrDeleteExisting(HasMetadata meta, ResourceHandler<HasMetadata, HasMetadataVisitiableBuilder> h, String namespaceToUse, boolean dryRun) {
+  private HasMetadata createOrReplaceOrDeleteExisting(HasMetadata meta, ResourceHandler<HasMetadata, ?> h, String namespaceToUse, boolean dryRun) {
       if (Boolean.TRUE.equals(deletingExisting)) {
         return deleteAndCreateItem(client, config, meta, h, namespaceToUse, propagationPolicy, gracePeriodSeconds, dryRun);
       }

@@ -23,7 +23,7 @@
   <parent>
     <groupId>io.fabric8</groupId>
     <artifactId>kubernetes-client-project</artifactId>
-    <version>5.4-SNAPSHOT</version>
+    <version>5.6-SNAPSHOT</version>
   </parent>
 
   <artifactId>kubernetes-model-generator</artifactId>
@@ -54,10 +54,17 @@
     <module>kubernetes-model-scheduling</module>
     <module>kubernetes-model-storageclass</module>
     <module>openshift-model</module>
+    <module>openshift-model-clusterautoscaling</module>
     <module>openshift-model-operator</module>
     <module>openshift-model-operatorhub</module>
+    <module>openshift-model-machine</module>
     <module>openshift-model-monitoring</module>
     <module>openshift-model-console</module>
+    <module>openshift-model-machineconfig</module>
+    <module>openshift-model-tuned</module>
+    <module>openshift-model-whereabouts</module>
+    <module>openshift-model-storageversionmigrator</module>
+    <module>openshift-model-miscellaneous</module>
   </modules>
 
   <properties>
@@ -74,7 +81,7 @@
       <artifactId>jackson-annotations</artifactId>
     </dependency>
 
-    <!-- CompileOnly (provided) depdendencies -->
+    <!-- CompileOnly (provided) dependencies -->
     <dependency>
       <groupId>org.projectlombok</groupId>
       <artifactId>lombok</artifactId>
@@ -131,7 +138,8 @@
             <includeJsr303Annotations>false</includeJsr303Annotations>
             <includeToString>false</includeToString>
             <includeHashcodeAndEquals>false</includeHashcodeAndEquals>
-            <outputDirectory>${project.build.directory}/generated-sources</outputDirectory>
+            <removeOldOutput>true</removeOldOutput>
+            <outputDirectory>${generate.targetDirectory}</outputDirectory>
             <annotationStyle>none</annotationStyle>
           </configuration>
           <executions>
@@ -148,6 +156,41 @@
               <version>${project.version}</version>
             </dependency>
           </dependencies>
+        </plugin>
+        <plugin>
+          <groupId>org.codehaus.mojo</groupId>
+          <artifactId>build-helper-maven-plugin</artifactId>
+          <version>${maven.buildhelper.plugin.version}</version>
+          <executions>
+            <execution>
+              <phase>generate-sources</phase>
+              <goals>
+                <goal>add-source</goal>
+              </goals>
+              <configuration>
+                <sources>
+                  <source>${generate.targetDirectory}</source>
+                </sources>
+              </configuration>
+            </execution>
+            <execution>
+              <id>attach-artifacts</id>
+              <phase>package</phase>
+              <goals>
+                <goal>attach-artifact</goal>
+              </goals>
+              <configuration>
+                <skipAttach>true</skipAttach>
+                <artifacts>
+                  <artifact>
+                    <file>${project.build.outputDirectory}/schema/kube-schema.json</file>
+                    <type>json</type>
+                    <classifier>schema</classifier>
+                  </artifact>
+                </artifacts>
+              </configuration>
+            </execution>
+          </executions>
         </plugin>
       </plugins>
     </pluginManagement>

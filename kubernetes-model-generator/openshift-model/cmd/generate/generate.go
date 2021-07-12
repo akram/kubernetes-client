@@ -33,6 +33,7 @@ import (
   userapi "github.com/openshift/api/user/v1"
   authenticationapi "k8s.io/api/authentication/v1"
   quotaapi "github.com/openshift/api/quota/v1"
+  helmapiv1beta1 "github.com/openshift/api/helm/v1beta1"
   rbac "k8s.io/api/rbac/v1" // depends
   "k8s.io/apimachinery/pkg/api/resource"
   metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -83,12 +84,17 @@ type Schema struct {
   ImageStreamImport                        imageapi.ImageStreamImport
   ImageStreamImage                         imageapi.ImageStreamImage
   ImageStreamMapping                       imageapi.ImageStreamMapping
+  ImageSignature                           imageapi.ImageSignature
   DeploymentConfig                         appsapi.DeploymentConfig
   DeploymentConfigList                     appsapi.DeploymentConfigList
   Route                                    routeapi.Route
   RouteList                                routeapi.RouteList
   Template                                 templateapi.Template
   TemplateList                             templateapi.TemplateList
+  TemplateInstance                         templateapi.TemplateInstance
+  TemplateInstanceList                     templateapi.TemplateInstanceList
+  BrokerTemplateInstance                   templateapi.BrokerTemplateInstance
+  BrokerTemplateInstanceList               templateapi.BrokerTemplateInstanceList
   TagEvent                                 imageapi.TagEvent
   OAuthClient                              oauthapi.OAuthClient
   OAuthAccessToken                         oauthapi.OAuthAccessToken
@@ -99,16 +105,20 @@ type Schema struct {
   OAuthClientList                          oauthapi.OAuthClientList
   OAuthClientAuthorizationList             oauthapi.OAuthClientAuthorizationList
   OpenshiftClusterRoleScopeRestriction     oauthapi.ClusterRoleScopeRestriction
+  UserOAuthAccessToken                     oauthapi.UserOAuthAccessToken
+  UserOAuthAccessTokenList                 oauthapi.UserOAuthAccessTokenList
   TokenReview                              authenticationapi.TokenReview
   OpenshiftRole                            authapi.Role
   OpenshiftRoleList                        authapi.RoleList
   OpenshiftRoleBinding                     authapi.RoleBinding
   OpenshiftRoleBindingList                 authapi.RoleBindingList
   OpenshiftRoleBindingRestriction          authapi.RoleBindingRestriction
+  OpenShiftRoleBindingRestrictionList      authapi.RoleBindingRestrictionList
   OpenshiftRoleBindingRestrictionSpec      authapi.RoleBindingRestrictionSpec
   LocalSubjectAccessReview                 authapi.LocalSubjectAccessReview
   LocalResourceAccessReview                authapi.LocalResourceAccessReview
   ResourceAccessReview                     authapi.ResourceAccessReview
+  ResourceAccessReviewResponse             authapi.ResourceAccessReviewResponse
   SubjectAccessReview                      authapi.SubjectAccessReview
   SubjectAccessReviewResponse              authapi.SubjectAccessReviewResponse
   SubjectRulesReview                       authapi.SubjectRulesReview
@@ -123,6 +133,7 @@ type Schema struct {
   GroupList                                userapi.GroupList
   Identity                                 userapi.Identity
   IdentityList                             userapi.IdentityList
+  UserIdentityMapping                      userapi.UserIdentityMapping
   Config                                   configapi.Config
   RootPaths                                metav1.RootPaths
   Project                                  projectapi.Project
@@ -137,6 +148,8 @@ type Schema struct {
   ClusterNetworkList                       networkapi.ClusterNetworkList
   EgressNetworkPolicy                      networkapi.EgressNetworkPolicy
   EgressNetworkPolicyList                  networkapi.EgressNetworkPolicyList
+  HostSubnet                               networkapi.HostSubnet
+  HostSubnetList                           networkapi.HostSubnetList
   DNSZone                                  openshiftconfigapi.DNSZone
   ClusterVersion                           openshiftconfigapi.ClusterVersion
   ClusterVersionList                       openshiftconfigapi.ClusterVersionList
@@ -161,10 +174,20 @@ type Schema struct {
   TLSProfileSpec                           openshiftconfigapi.TLSProfileSpec
   Ingress                                  openshiftconfigapi.Ingress
   IngressList                              openshiftconfigapi.IngressList
+  Authentication                           openshiftconfigapi.Authentication
+  AuthenticationList                       openshiftconfigapi.AuthenticationList
+  Console                                  openshiftconfigapi.Console
+  ConsoleList                              openshiftconfigapi.ConsoleList
+  DNS                                      openshiftconfigapi.DNS
+  DNSList                                  openshiftconfigapi.DNSList
+  Network                                  openshiftconfigapi.Network
+  NetworkList                              openshiftconfigapi.NetworkList
   AppliedClusterResourceQuota              quotaapi.AppliedClusterResourceQuota
   AppliedClusterResourceQuotaList          quotaapi.AppliedClusterResourceQuotaList
   ClusterResourceQuota                     quotaapi.ClusterResourceQuota
   ClusterResourceQuotaList                 quotaapi.ClusterResourceQuotaList
+  HelmChartRepository                      helmapiv1beta1.HelmChartRepository
+  HelmChartRepositoryList                  helmapiv1beta1.HelmChartRepositoryList
 }
 
 func main() {
@@ -193,8 +216,9 @@ func main() {
     {"github.com/openshift/api/project/v1", "", "io.fabric8.openshift.api.model", "os_project_", true},
     {"github.com/openshift/api/security/v1", "", "io.fabric8.openshift.api.model", "os_security_", true},
     {"github.com/openshift/api/network/v1", "", "io.fabric8.openshift.api.model", "os_network_", true},
-    {"github.com/openshift/api/config/v1", "", "io.fabric8.openshift.api.model", "os_config_", true},
+    {"github.com/openshift/api/config/v1", "", "io.fabric8.openshift.api.model", "os_config_v1_", true},
     {"github.com/openshift/api/quota/v1", "", "io.fabric8.openshift.api.model", "os_quota_", true},
+    {"github.com/openshift/api/helm/v1beta1", "", "io.fabric8.openshift.api.model", "os_helm_v1beta1_", true},
 
   }
 

@@ -17,7 +17,6 @@ package io.fabric8.kubernetes.examples;
 
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
-import io.fabric8.kubernetes.api.model.apiextensions.v1beta1.CustomResourceDefinition;
 import io.fabric8.kubernetes.client.DefaultKubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.informers.ResourceEventHandler;
@@ -73,7 +72,7 @@ public class CustomResourceInformerExample {
           }
         } catch (InterruptedException inEx) {
           Thread.currentThread().interrupt();
-          logger.info("HAS_SYNCED_THREAD INTERRUPTED!");
+          logger.warn("HAS_SYNCED_THREAD interrupted: {}", inEx.getMessage());
         }
       });
 
@@ -93,7 +92,7 @@ public class CustomResourceInformerExample {
       TimeUnit.MINUTES.sleep(5);
     } catch (InterruptedException interruptedException) {
       Thread.currentThread().interrupt();
-      logger.info("interrupted: {}", interruptedException.getMessage());
+      logger.warn("interrupted: {}", interruptedException.getMessage());
     }
   }
 }

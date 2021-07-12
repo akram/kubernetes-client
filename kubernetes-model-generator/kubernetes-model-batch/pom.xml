@@ -21,7 +21,7 @@
   <parent>
     <groupId>io.fabric8</groupId>
     <artifactId>kubernetes-model-generator</artifactId>
-    <version>5.4-SNAPSHOT</version>
+    <version>5.6-SNAPSHOT</version>
   </parent>
 
   <artifactId>kubernetes-model-batch</artifactId>
@@ -46,27 +46,14 @@
   <build>
     <plugins>
       <plugin>
-        <groupId>org.jsonschema2pojo</groupId>
-        <artifactId>jsonschema2pojo-maven-plugin</artifactId>
-      </plugin>
-      <plugin>
-        <artifactId>maven-antrun-plugin</artifactId>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
         <executions>
           <execution>
-            <phase>generate-sources</phase>
+            <id>attach-artifacts</id>
             <configuration>
-              <target>
-                <echo>removing the duplicate generated class</echo>
-                <delete verbose="true">
-                  <fileset dir="${project.build.directory}/generated-sources">
-                    <include name="*.java" />
-                  </fileset>
-                </delete>
-              </target>
+              <skipAttach>false</skipAttach>
             </configuration>
-            <goals>
-              <goal>run</goal>
-            </goals>
           </execution>
         </executions>
       </plugin>
@@ -90,29 +77,20 @@
           </instructions>
         </configuration>
       </plugin>
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>build-helper-maven-plugin</artifactId>
-        <version>${maven.buildhelper.plugin.version}</version>
-        <executions>
-          <execution>
-            <id>attach-artifacts</id>
-            <phase>package</phase>
-            <goals>
-              <goal>attach-artifact</goal>
-            </goals>
-            <configuration>
-              <artifacts>
-                <artifact>
-                  <file>${project.build.outputDirectory}/schema/kube-schema.json</file>
-                  <type>json</type>
-                  <classifier>schema</classifier>
-                </artifact>
-              </artifacts>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>generate</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.jsonschema2pojo</groupId>
+            <artifactId>jsonschema2pojo-maven-plugin</artifactId>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

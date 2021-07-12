@@ -17,7 +17,6 @@ package io.fabric8.kubernetes.client.internal;
 
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.utils.Utils;
-import okio.ByteString;
 import org.bouncycastle.openssl.PEMKeyPair;
 import org.bouncycastle.openssl.PEMParser;
 import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
@@ -46,29 +45,23 @@ import java.security.cert.X509Certificate;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.RSAPrivateCrtKeySpec;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
 
 public class CertUtils {
+  private CertUtils() { }
 
   private static final Logger LOG = LoggerFactory.getLogger(CertUtils.class);
-  public static String TRUST_STORE_SYSTEM_PROPERTY = "javax.net.ssl.trustStore";
-  public static String TRUST_STORE_PASSWORD_SYSTEM_PROPERTY = "javax.net.ssl.trustStorePassword";
-  public static String KEY_STORE_SYSTEM_PROPERTY = "javax.net.ssl.keyStore";
-  public static String KEY_STORE_PASSWORD_SYSTEM_PROPERTY = "javax.net.ssl.keyStorePassword";
+  public static final String TRUST_STORE_SYSTEM_PROPERTY = "javax.net.ssl.trustStore";
+  public static final String TRUST_STORE_PASSWORD_SYSTEM_PROPERTY = "javax.net.ssl.trustStorePassword";
+  public static final String KEY_STORE_SYSTEM_PROPERTY = "javax.net.ssl.keyStore";
+  public static final String KEY_STORE_PASSWORD_SYSTEM_PROPERTY = "javax.net.ssl.keyStorePassword";
 
   public static InputStream getInputStreamFromDataOrFile(String data, String file) throws IOException {
     if (data != null) {
-      byte[] bytes = null;
-      ByteString decoded = ByteString.decodeBase64(data);
-      if (decoded != null) {
-          bytes = decoded.toByteArray();
-      } else {
-          bytes = data.getBytes();
-      }
-
-      return new ByteArrayInputStream(bytes);
+      return createInputStreamFromBase64EncodedString(data);
     }
     if (file != null) {
       return new ByteArrayInputStream(new String(Files.readAllBytes(Paths.get(file))).trim().getBytes());
@@ -90,10 +83,12 @@ public class CertUtils {
   }
 
   public static KeyStore createTrustStore(InputStream pemInputStream, String trustStoreFile, char[] trustStorePassphrase) throws IOException, CertificateException, KeyStoreException, NoSuchAlgorithmException {
-    KeyStore trustStore = KeyStore.getInstance("JKS");
+    KeyStore trustStore = KeyStore.getInstance(KeyStore.getDefaultType());
 
     if (Utils.isNotNullOrEmpty(trustStoreFile)) {
-      trustStore.load(new FileInputStream(trustStoreFile), trustStorePassphrase);
+      try (FileInputStream fis = new FileInputStream(trustStoreFile)) {
+        trustStore.load(fis, trustStorePassphrase);
+      }
     } else {
       loadDefaultTrustStoreFile(trustStore, trustStorePassphrase);
     }
@@ -112,9 +107,11 @@ public class CertUtils {
       Collection<? extends Certificate> certificates = certFactory.generateCertificates(certInputStream);
       PrivateKey privateKey = loadKey(keyInputStream, clientKeyAlgo);
 
-      KeyStore keyStore = KeyStore.getInstance("JKS");
+      KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
       if (Utils.isNotNullOrEmpty(keyStoreFile)){
-        keyStore.load(new FileInputStream(keyStoreFile), keyStorePassphrase);
+        try (FileInputStream fis = new FileInputStream(keyStoreFile)) {
+          keyStore.load(fis, keyStorePassphrase);
+        }
       } else {
         loadDefaultKeyStoreFile(keyStore, keyStorePassphrase);
       }
@@ -145,7 +142,7 @@ public class CertUtils {
         @Override
         public PrivateKey call() {
           try {
-            if (Security.getProvider("BC") == null) {
+            if (Security.getProvider("BC") == null && Security.getProvider("BCFIPS") == null) {
               Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
             }
             PEMKeyPair keys = (PEMKeyPair) new PEMParser(new InputStreamReader(keyInputStream)).readObject();
@@ -227,7 +224,9 @@ public class CertUtils {
 
     if (fileToLoad.exists() && fileToLoad.isFile() && fileToLoad.length() > 0) {
       try {
-        keyStore.load(new FileInputStream(fileToLoad), passphrase);
+        try (FileInputStream fis = new FileInputStream(fileToLoad)) {
+          keyStore.load(fis, passphrase);
+        }
         return true;
       } catch (Exception e) {
         String passphraseToPrint = passphrase != null ? String.valueOf(passphrase) : null;
@@ -278,10 +277,21 @@ public class CertUtils {
 
     while ((line = reader.readLine()) != null) {
       if (line.indexOf(endMarker) != -1) {
-        return ByteString.decodeBase64(buf.toString()).toByteArray();
+        return Base64.getDecoder().decode(buf.toString());
       }
       buf.append(line.trim());
     }
     throw new IOException("PEM is invalid : No end marker");
+  }
+
+  private static ByteArrayInputStream createInputStreamFromBase64EncodedString(String data) {
+    byte[] bytes;
+    try {
+      bytes = Base64.getDecoder().decode(data);
+    } catch (IllegalArgumentException illegalArgumentException) {
+      bytes = data.getBytes();
+    }
+
+    return new ByteArrayInputStream(bytes);
   }
 }

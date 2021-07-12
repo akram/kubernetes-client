@@ -15,13 +15,11 @@
  */
 package io.fabric8.kubernetes.client.dsl.internal.extensions.v1beta1;
 
-import io.fabric8.kubernetes.api.builder.Visitor;
 import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.Status;
 import io.fabric8.kubernetes.api.model.extensions.DeploymentRollback;
 import io.fabric8.kubernetes.api.model.extensions.ReplicaSet;
-import io.fabric8.kubernetes.api.model.extensions.ReplicaSetBuilder;
 import io.fabric8.kubernetes.api.model.extensions.ReplicaSetList;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.KubernetesClientException;
@@ -195,9 +193,9 @@ public class ReplicaSetOperationsImpl extends RollableScalableResourceOperation<
   }
 
   private List<PodResource<Pod>> doGetLog(boolean isPretty) {
-    ReplicaSet replicaSet = fromServer().get();
+    ReplicaSet replicaSet = requireFromServer();
     return PodOperationUtil.getPodOperationsForController(context, replicaSet.getMetadata().getUid(),
-      getReplicaSetSelectorLabels(replicaSet), isPretty, podLogWaitTimeout);
+      getReplicaSetSelectorLabels(replicaSet), isPretty, podLogWaitTimeout, ((RollingOperationContext)context).getContainerId());
   }
 
   /**
@@ -206,13 +204,7 @@ public class ReplicaSetOperationsImpl extends RollableScalableResourceOperation<
    */
   @Override
   public Reader getLogReader() {
-    List<PodResource<Pod>> podResources = doGetLog(false);
-    if (podResources.size() > 1) {
-      throw new KubernetesClientException("Reading logs is not supported for multicontainer jobs");
-    } else if (podResources.size() == 1) {
-      return podResources.get(0).getLogReader();
-    }
-    return null;
+    return PodOperationUtil.getLogReader(doGetLog(false));
   }
 
   @Override
@@ -222,23 +214,12 @@ public class ReplicaSetOperationsImpl extends RollableScalableResourceOperation<
 
   @Override
   public LogWatch watchLog(OutputStream out) {
-    List<PodResource<Pod>> podResources = doGetLog(false);
-    if (podResources.size() > 1) {
-      throw new KubernetesClientException("Watching logs is not supported for multicontainer jobs");
-    } else if (podResources.size() == 1) {
-      return podResources.get(0).watchLog(out);
-    }
-    return null;
+    return PodOperationUtil.watchLog(doGetLog(false), out);
   }
 
   @Override
   public Loggable<LogWatch> withLogWaitTimeout(Integer logWaitTimeout) {
     return new ReplicaSetOperationsImpl(((RollingOperationContext) context), logWaitTimeout);
-  }
-
-  @Override
-  public ReplicaSet edit(Visitor... visitors) {
-    return patch(new ReplicaSetBuilder(getMandatory()).accept(visitors).build());
   }
 
   static Map<String, String> getReplicaSetSelectorLabels(ReplicaSet replicaSet) {
@@ -248,5 +229,10 @@ public class ReplicaSetOperationsImpl extends RollableScalableResourceOperation<
       labels.putAll(replicaSet.getSpec().getSelector().getMatchLabels());
     }
     return labels;
+  }
+
+  @Override
+  public Loggable<LogWatch> inContainer(String id) {
+    return newInstance(((RollingOperationContext)context).withContainerId(id));
   }
 }

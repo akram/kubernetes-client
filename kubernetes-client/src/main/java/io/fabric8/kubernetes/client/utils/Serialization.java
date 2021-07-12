@@ -144,6 +144,20 @@ public class Serialization {
       throw KubernetesClientException.launderThrowable(e);
     }
   }
+  
+  /**
+   * Unmarshals a {@link String}
+   * @param str   The {@link String}.
+   * @param <T>   template argument denoting type
+   * @return returns de-serialized object
+   */
+  public static<T> T unmarshal(String str) {
+    try (InputStream is = new ByteArrayInputStream(str.getBytes(StandardCharsets.UTF_8))) {
+      return unmarshal(is);
+    } catch (IOException e) {
+      throw KubernetesClientException.launderThrowable(e);
+    }
+  }
 
   /**
    * Unmarshals a {@link String}
@@ -311,5 +325,21 @@ public class Serialization {
       return JSON_MAPPER.readValue(jsonString, type);
     }
     return JSON_MAPPER.readerFor(KubernetesResource.class).readValue(jsonString);
+  }
+  
+  /**
+   * Create a copy of the resource via serialization.
+   * @return a deep clone of the resource
+   * @throws IllegalArgumentException if the cloning cannot be performed
+   */
+  public static <T> T clone(T resource) {
+    // if full serialization seems too expensive, there is also
+    //return (T) JSON_MAPPER.convertValue(resource, resource.getClass());
+    try {
+      return (T) JSON_MAPPER.readValue(
+          JSON_MAPPER.writeValueAsString(resource), resource.getClass());
+    } catch (JsonProcessingException e) {
+      throw new IllegalStateException(e);
+    }
   }
 }

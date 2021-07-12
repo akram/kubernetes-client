@@ -21,6 +21,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonProperty.Access;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
@@ -32,6 +33,8 @@ import io.fabric8.kubernetes.model.annotation.Group;
 import io.fabric8.kubernetes.model.annotation.ShortNames;
 import io.fabric8.kubernetes.model.annotation.Version;
 import io.sundr.builder.annotations.Buildable;
+import io.sundr.builder.annotations.BuildableReference;
+
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,14 +45,14 @@ import org.slf4j.LoggerFactory;
  *
  * Properties are set up automatically as follows:
  * <ul>
- *   <li>group is set using {@link HasMetadata#getGroup(Class)}</li>
- *   <li>version is set using {@link HasMetadata#getVersion(Class)}</li>
- *   <li>singular is set using {@link HasMetadata#getSingular(Class)}</li>
- *   <li>plural is set using {@link HasMetadata#getPlural(Class)}</li>
+ *   <li>group is set using {@link io.fabric8.kubernetes.api.model.HasMetadata#getGroup(Class)}</li>
+ *   <li>version is set using {@link io.fabric8.kubernetes.api.model.HasMetadata#getVersion(Class)}</li>
+ *   <li>singular is set using {@link io.fabric8.kubernetes.api.model.HasMetadata#getSingular(Class)}</li>
+ *   <li>plural is set using {@link io.fabric8.kubernetes.api.model.HasMetadata#getPlural(Class)}</li>
  *   <li>computed CRD name using {@link CustomResource#getCRDName(Class)}</li>
  * </ul>
  *
- * In addition, {@link #setApiVersion(String)} and {@link #setKind(String)} are overridden to not do anything since these values
+ * In addition, {@link CustomResource#setApiVersion(String)} and {@link CustomResource#setKind(String)} are overridden to not do anything since these values
  * are set.
  *
  * @param <S> the class providing the {@code Spec} part of this CustomResource
@@ -65,8 +68,10 @@ import org.slf4j.LoggerFactory;
   "spec",
   "status"
 })
-@Buildable(builderPackage = "io.fabric8.kubernetes.api.builder", editableEnabled = false)
 @JsonInclude(Include.NON_NULL)
+@Buildable(editableEnabled = false, validationEnabled = false, generateBuilderPackage = false, lazyCollectionInitEnabled = false, builderPackage = "io.fabric8.kubernetes.api.builder", refs = {
+  @BuildableReference(io.fabric8.kubernetes.api.model.ObjectMeta.class),
+})
 public abstract class CustomResource<S, T> implements HasMetadata {
   private static final Logger LOG = LoggerFactory.getLogger(CustomResource.class);
 
@@ -80,7 +85,9 @@ public abstract class CustomResource<S, T> implements HasMetadata {
 
   private final String singular;
   private final String crdName;
+  @JsonProperty(access = Access.READ_ONLY)
   private final String kind;
+  @JsonProperty(access = Access.READ_ONLY)
   private final String apiVersion;
   private final String scope;
   private final String plural;
@@ -123,7 +130,7 @@ public abstract class CustomResource<S, T> implements HasMetadata {
   protected S initSpec() {
     return null;
   }
-  
+
   /**
    * Override to provide your own Status instance
    * @return a new Status instance or {@code null} if the responsibility of instantiating the Status is left to users of this CustomResource

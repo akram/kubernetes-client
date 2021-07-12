@@ -22,7 +22,7 @@ import io.fabric8.mockwebserver.Context;
 import io.fabric8.mockwebserver.ServerRequest;
 import io.fabric8.mockwebserver.ServerResponse;
 import io.fabric8.tekton.client.DefaultTektonClient;
-import io.fabric8.tekton.client.TektonClient;
+import io.fabric8.tekton.client.NamespacedTektonClient;
 import okhttp3.mockwebserver.Dispatcher;
 import okhttp3.mockwebserver.MockWebServer;
 
@@ -30,7 +30,7 @@ import java.util.Map;
 import java.util.Queue;
 
 import static io.fabric8.kubernetes.client.utils.HttpClientUtils.createHttpClientForMockServer;
-import static okhttp3.TlsVersion.TLS_1_0;
+import static okhttp3.TlsVersion.TLS_1_2;
 
 public class TektonMockServer extends KubernetesMockServer {
   private boolean disableApiGroupCheck = true;
@@ -52,12 +52,12 @@ public class TektonMockServer extends KubernetesMockServer {
     return new String[]{"/api","/apis/tekton.k8s.io"};
   }
 
-  public TektonClient createTekton() {
+  public NamespacedTektonClient createTekton() {
     Config config = new ConfigBuilder()
       .withMasterUrl(url("/"))
       .withNamespace("test")
       .withTrustCerts(true)
-      .withTlsVersions(TLS_1_0)
+      .withTlsVersions(TLS_1_2)
       .build();
     return new DefaultTektonClient(createHttpClientForMockServer(config), config);
   }

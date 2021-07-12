@@ -136,14 +136,15 @@ public class ResourceListTest {
   void testCreateOrReplaceWithoutDeleteExisting() throws Exception {
     server.expect().post().withPath("/api/v1/namespaces/ns1/services").andReturn(HTTP_CONFLICT, service).once();
     server.expect().post().withPath("/api/v1/namespaces/ns1/configmaps").andReturn(HTTP_CONFLICT, configMap).once();
-    server.expect().get().withPath("/api/v1/namespaces/ns1/services/my-service").andReturn(HTTP_OK , service).once();
+    // once for the ip and once for the resource version - this should be consolidated
+    server.expect().get().withPath("/api/v1/namespaces/ns1/services/my-service").andReturn(HTTP_OK , service).times(2);
     server.expect().get().withPath("/api/v1/namespaces/ns1/configmaps/my-configmap").andReturn(HTTP_OK, configMap).once();
     server.expect().put().withPath("/api/v1/namespaces/ns1/services/my-service").andReturn(HTTP_OK, updatedService).once();
     server.expect().put().withPath("/api/v1/namespaces/ns1/configmaps/my-configmap").andReturn(HTTP_OK, updatedConfigMap).once();
 
     client.resourceList(resourcesToUpdate).inNamespace("ns1").createOrReplace();
 
-    assertEquals(6, server.getRequestCount());
+    assertEquals(7, server.getRequestCount());
     RecordedRequest request = server.getLastRequest();
     assertEquals("/api/v1/namespaces/ns1/configmaps/my-configmap", request.getPath());
     assertEquals("PUT", request.getMethod());
@@ -184,8 +185,8 @@ public class ResourceListTest {
       .anyMatch(c -> "True".equals(c.getStatus()));
 
     // The pods are never ready if you request them directly.
-    server.expect().get().withPath("/api/v1/namespaces/ns1/pods/pod1").andReturn(HTTP_OK, noReady1).once();
-    server.expect().get().withPath("/api/v1/namespaces/ns1/pods/pod2").andReturn(HTTP_OK, noReady2).once();
+    ResourceTest.list(server, noReady1);
+    ResourceTest.list(server, noReady2);
 
     server.expect().get().withPath("/api/v1/namespaces/ns1/pods?fieldSelector=metadata.name%3Dpod1&resourceVersion=1&watch=true").andUpgradeToWebSocket()
       .open()
@@ -225,8 +226,8 @@ public class ResourceListTest {
       .anyMatch(c -> "True".equals(c.getStatus()));
 
     // The pods are never ready if you request them directly.
-    server.expect().get().withPath("/api/v1/namespaces/ns1/pods/pod1").andReturn(HTTP_OK, noReady1).once();
-    server.expect().get().withPath("/api/v1/namespaces/ns1/pods/pod2").andReturn(HTTP_OK, noReady2).once();
+    ResourceTest.list(server, noReady1);
+    ResourceTest.list(server, noReady2);
 
     Status gone = new StatusBuilder()
       .withCode(HTTP_GONE)

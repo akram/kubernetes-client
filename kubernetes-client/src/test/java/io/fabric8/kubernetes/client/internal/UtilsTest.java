@@ -15,8 +15,8 @@
  */
 package io.fabric8.kubernetes.client.internal;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -78,6 +78,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.concurrent.ThreadFactory;
+
 import org.apache.commons.lang.SystemUtils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
@@ -371,5 +373,13 @@ class UtilsTest {
       assertEquals("sh", commandPrefix.get(0));
       assertEquals("-c", commandPrefix.get(1));
     }
+  }
+  
+  @Test
+  void testDaemonThreadFactory() {
+    ThreadFactory tf = Utils.daemonThreadFactory(this);
+    Thread t = tf.newThread(()->{});
+    assertTrue(t.isDaemon());
+    assertTrue(t.getName().startsWith(UtilsTest.class.getSimpleName()));
   }
 }

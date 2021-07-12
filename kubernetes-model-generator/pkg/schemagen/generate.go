@@ -224,7 +224,7 @@ func (g *schemaGenerator) resourceListWithGeneric(t reflect.Type) string {
 }
 
 func (g *schemaGenerator) javaInterfaces(t reflect.Type) []string {
-	if _, ok := t.FieldByName("ObjectMeta"); t.Name() != "JobTemplateSpec" && t.Name() != "PodTemplateSpec" && t.Name() != "PersistentVolumeClaimTemplate" && ok {
+	if _, ok := t.FieldByName("ObjectMeta"); t.Name() != "JobTemplateSpec" && t.Name() != "PodTemplateSpec" && t.Name() != "PersistentVolumeClaimTemplate"  && t.Name() != "MachineSpec" && t.Name() != "MachineTemplateSpec" && ok {
 		scope := g.crdScope(t)
 
 		if scope == Namespaced {
@@ -633,6 +633,14 @@ func (g *schemaGenerator) isClusterScopedResource(t reflect.Type) bool {
                 "k8s.io/api/flowcontrol/v1beta1/PriorityLevelConfiguration",
                 "github.com/openshift/api/authorization/v1/ClusterRole",
                 "github.com/openshift/api/authorization/v1/ClusterRoleBinding",
+                "github.com/openshift/api/authorization/v1/ResourceAccessReview",
+                "github.com/openshift/api/authorization/v1/SubjectAccessReview",
+                "github.com/openshift/api/oauth/v1/UserOAuthAccessToken",
+                "github.com/openshift/api/oauth/v1/OAuthClientAuthorization",
+		"github.com/openshift/api/config/v1/Authentication",
+		"github.com/openshift/api/config/v1/Console",
+		"github.com/openshift/api/config/v1/DNS",
+		"github.com/openshift/api/config/v1/Network",
 		"github.com/openshift/api/config/v1/Infrastructure",
 		"github.com/openshift/api/config/v1/FeatureGate",
 		"github.com/openshift/api/config/v1/OperatorHub",
@@ -647,8 +655,12 @@ func (g *schemaGenerator) isClusterScopedResource(t reflect.Type) bool {
 		"github.com/openshift/api/config/v1/Proxy",
 		"github.com/openshift/api/security/v1/RangeAllocation",
 		"github.com/openshift/api/operator/v1/CSISnapshotController",
+		"github.com/openshift/api/operator/v1/ClusterCSIDriver",
+		"github.com/openshift/api/operator/v1/Config",
+		"github.com/openshift/api/operator/v1/CloudCredential",
 		"github.com/openshift/api/operator/v1/Etcd",
 		"github.com/openshift/api/operator/v1/ServiceCatalogControllerManager",
+		"github.com/openshift/api/operator/v1/Storage",
 		"github.com/openshift/api/operator/v1/KubeStorageVersionMigrator",
 		"github.com/openshift/api/operator/v1/Console",
 		"github.com/openshift/api/operator/v1/KubeAPIServer",
@@ -662,13 +674,30 @@ func (g *schemaGenerator) isClusterScopedResource(t reflect.Type) bool {
 		"github.com/openshift/api/operator/v1/Network",
 		"github.com/openshift/api/operator/v1/KubeScheduler",
 		"github.com/openshift/api/operator/v1/Authentication",
+                "github.com/operator-framework/api/pkg/operators/v1/Operator",
 		"github.com/openshift/api/imageregistry/v1/ImagePruner",
+		"github.com/openshift/api/imageregistry/v1/Config",
 		"github.com/openshift/api/console/v1/ConsoleLink",
 		"github.com/openshift/api/console/v1/ConsoleCLIDownload",
 		"github.com/openshift/api/console/v1/ConsoleNotification",
 		"github.com/openshift/api/console/v1/ConsoleYAMLSample",
 		"github.com/openshift/api/console/v1/ConsoleExternalLogLink",
+		"github.com/openshift/api/console/v1/ConsoleQuickStart",
+		"github.com/openshift/api/console/v1alpha1/ConsolePlugin",
                 "github.com/openshift/api/config/v1/Ingress",
+                "github.com/openshift/api/template/v1/BrokerTemplateInstance",
+                "github.com/openshift/api/helm/v1beta1/HelmChartRepository",
+                "github.com/openshift/api/network/v1/HostSubnet",
+                "github.com/openshift/api/user/v1/UserIdentityMapping",
+                "github.com/openshift/api/user/v1/Identity",
+                "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1/ContainerRuntimeConfig",
+                "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1/ControllerConfig",
+                "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1/KubeletConfig",
+                "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1/MachineConfigPool",
+                "github.com/openshift/machine-config-operator/pkg/apis/machineconfiguration.openshift.io/v1/MachineConfig",
+                "github.com/openshift/cluster-autoscaler-operator/pkg/apis/autoscaling/v1/ClusterAutoscaler",
+                "sigs.k8s.io/kube-storage-version-migrator/pkg/apis/migration/v1alpha1/StorageState",
+                "sigs.k8s.io/kube-storage-version-migrator/pkg/apis/migration/v1alpha1/StorageVersionMigration",
 	}
 
 	return Contains(clusterScopedResourcesList, t.PkgPath() + "/" + t.Name())

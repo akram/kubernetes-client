@@ -16,28 +16,22 @@
 package io.fabric8.knative.test.crud;
 
 import io.fabric8.knative.client.KnativeClient;
-import io.fabric8.knative.mock.KnativeServer;
-
+import io.fabric8.knative.mock.EnableKnativeMockClient;
 import io.fabric8.knative.serving.v1.Service;
 import io.fabric8.knative.serving.v1.ServiceBuilder;
 import io.fabric8.knative.serving.v1.ServiceList;
-import org.junit.Rule;
+import io.fabric8.knative.serving.v1.ServiceStatusBuilder;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.migrationsupport.rules.EnableRuleMigrationSupport;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
-@EnableRuleMigrationSupport
+@EnableKnativeMockClient(crud = true)
 class ServiceCrudTest {
 
-  @Rule
-  public KnativeServer server = new KnativeServer(true, true);
-
+KnativeClient client;
   @Test
   void shouldReturnEmptyList() {
-    KnativeClient client = server.getKnativeClient();
+
     ServiceList serviceList = client.services().inNamespace("ns1").list();
     assertNotNull(serviceList);
     assertTrue(serviceList.getItems().isEmpty());
@@ -45,7 +39,7 @@ class ServiceCrudTest {
 
   @Test
   void shouldListAndGetService() {
-    KnativeClient client = server.getKnativeClient();
+
     Service service2 = new ServiceBuilder().withNewMetadata().withName("service2").endMetadata().build();
 
     client.services().inNamespace("ns2").create(service2);
@@ -60,23 +54,25 @@ class ServiceCrudTest {
 
   @Test
   void shouldIncludeServiceStatus() {
-    KnativeClient client = server.getKnativeClient();
+
     Service service = new ServiceBuilder()
       .withNewMetadata().withName("service").endMetadata()
-      .withNewStatus().withNewAddress("http://my-service").endStatus()
       .build();
 
-    client.services().inNamespace("ns2").create(service);
+    Service created = client.services().inNamespace("ns2").create(service);
 
     ServiceList serviceList = client.services().inNamespace("ns2").list();
     assertNotNull(serviceList);
     assertEquals(1, serviceList.getItems().size());
-    assertNotNull(serviceList.getItems().get(0).getStatus());
+
+    created.setStatus(new ServiceStatusBuilder().withNewAddress("http://my-service").build());
+
+    assertNotNull(client.services().inNamespace("ns2").withName("service").updateStatus(created).getStatus());
   }
 
   @Test
   void shouldDeleteAService() {
-    KnativeClient client = server.getKnativeClient();
+
     Service service3 = new ServiceBuilder().withNewMetadata().withName("service3").endMetadata().build();
 
     client.services().inNamespace("ns3").create(service3);

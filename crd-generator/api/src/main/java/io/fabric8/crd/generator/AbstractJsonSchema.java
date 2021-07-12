@@ -23,12 +23,14 @@ import io.fabric8.kubernetes.api.model.IntOrString;
 import io.fabric8.kubernetes.api.model.Quantity;
 import io.sundr.builder.internal.functions.TypeAs;
 import io.sundr.codegen.functions.ClassTo;
-import io.sundr.codegen.model.ClassRef;
-import io.sundr.codegen.model.PrimitiveRefBuilder;
-import io.sundr.codegen.model.Property;
-import io.sundr.codegen.model.TypeDef;
-import io.sundr.codegen.model.TypeRef;
-import io.sundr.codegen.utils.TypeUtils;
+import io.sundr.model.AnnotationRef;
+import io.sundr.model.ClassRef;
+import io.sundr.model.Method;
+import io.sundr.model.PrimitiveRefBuilder;
+import io.sundr.model.Property;
+import io.sundr.model.TypeDef;
+import io.sundr.model.TypeRef;
+import io.sundr.utils.Strings;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -38,6 +40,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Encapsulates the common logic supporting OpenAPI schema generation for CRD generation.
@@ -46,6 +50,8 @@ import java.util.Set;
  * @param <B> the concrete type of the JSON Schema builder
  */
 public abstract class AbstractJsonSchema<T, B> {
+
+  private static final Logger LOGGER = LoggerFactory.getLogger(AbstractJsonSchema.class);
 
   protected static final TypeDef QUANTITY = ClassTo.TYPEDEF.apply(Quantity.class);
   protected static final TypeDef DURATION = ClassTo.TYPEDEF.apply(Duration.class);
@@ -82,6 +88,7 @@ public abstract class AbstractJsonSchema<T, B> {
     .build();
 
   private static final Map<TypeRef, String> COMMON_MAPPINGS = new HashMap<>();
+  public static final String ANNOTATION_JSON_PROPERTY = "com.fasterxml.jackson.annotation.JsonProperty";
 
   static {
     COMMON_MAPPINGS.put(STRING_REF, STRING_MARKER);
@@ -123,24 +130,60 @@ public abstract class AbstractJsonSchema<T, B> {
       ignore.length > 0 ? new LinkedHashSet<>(Arrays.asList(ignore)) : Collections
         .emptySet();
     List<String> required = new ArrayList<>();
-    
+
+    final List<Method> methods = definition.getMethods();
+
     for (Property property : definition.getProperties()) {
       final String name = property.getName();
+      final Property[] updated = new Property[1];
 
       if (property.isStatic() || ignores.contains(name)) {
+        LOGGER.debug("Ignoring property {}", name);
         continue;
       }
+      
+      property.getAnnotations().forEach(a -> {
+        switch(a.getClassRef().getFullyQualifiedName()) {
+          case "javax.validation.constraints.NotNull":
+            required.add(name);
+            break;
+          case ANNOTATION_JSON_PROPERTY:
+            updatePropertyFromAnnotationIfNeeded(property, name, updated, a);
+            break;
+        }
+      });
 
-      if (property.getAnnotations()
-        .stream()
-        .anyMatch(a -> a.getClassRef().getFullyQualifiedName()
-          .equals("javax.validation.constraints.NotNull"))) {
-        required.add(name);
+      // only check accessors if the property itself hasn't already been annotated
+      if (updated[0] == null) {
+        // check if accessors are annotated with JsonProperty with a different name
+        methods.stream()
+          .filter(m -> m.getName().matches("(is|get|set)" + property.getNameCapitalized()))
+          .forEach(m -> m.getAnnotations().stream()
+            // check if accessor is annotated with JsonProperty
+            .filter(a -> a.getClassRef().getFullyQualifiedName().equals(ANNOTATION_JSON_PROPERTY))
+            .findAny()
+            // if we found an annotated accessor, override the property's name if needed
+            .ifPresent(a -> updatePropertyFromAnnotationIfNeeded(property, name, updated, a))
+          );
+      } else {
+        LOGGER.debug("Property {} has already been renamed to {} by field annotation", name, updated[0].getName());
       }
 
-      addProperty(property, builder, internalFrom(property.getTypeRef()));
+      final Property possiblyRenamedProperty = updated[0] != null ? updated[0] : property;
+      addProperty(possiblyRenamedProperty, builder, internalFrom(possiblyRenamedProperty.getName(),
+        possiblyRenamedProperty.getTypeRef()));
     }
     return build(builder, required);
+  }
+
+  private void updatePropertyFromAnnotationIfNeeded(Property property, String name, Property[] updated,
+    AnnotationRef a) {
+    final String fromAnnotation = (String) a.getParameters().get("value");
+    if (!Strings.isNullOrEmpty(fromAnnotation) && !name.equals(fromAnnotation)) {
+      updated[0] = new Property(property.getAnnotations(), property.getTypeRef(), fromAnnotation,
+        property.getComments(),
+        property.getModifiers(), property.getAttributes());
+    }
   }
 
   /**
@@ -151,7 +194,7 @@ public abstract class AbstractJsonSchema<T, B> {
   public abstract B newBuilder();
 
   /**
-   * Adds the specified property to the specified builder, calling {@link #internalFrom(TypeRef)}
+   * Adds the specified property to the specified builder, calling {@link #internalFrom(String, TypeRef)}
    * to create the property schema.
    *
    * @param property the property to add to the currently being built schema
@@ -173,17 +216,41 @@ public abstract class AbstractJsonSchema<T, B> {
   /**
    * Builds the specific JSON schema representing the structural schema for the specified property
    *
+   * @param name the name of the property which schema we want to build
    * @param typeRef the type of the property which schema we want to build
    * @return the structural schema associated with the specified property
    */
-  public T internalFrom(TypeRef typeRef) {
+  public T internalFrom(String name, TypeRef typeRef) {
     // Note that ordering of the checks here is meaningful: we need to check for complex types last
     // in case some "complex" types are handled specifically
-    if (typeRef.getDimensions() > 0 || TypeUtils.isCollection(typeRef)) { // Handle Collections & Arrays
-      return collectionProperty(
-        internalFrom(TypeAs.combine(TypeAs.UNWRAP_ARRAY_OF, TypeAs.UNWRAP_COLLECTION_OF).apply(typeRef)));
-    } else if (TypeUtils.isOptional(typeRef)) { // Handle Optionals
-      return internalFrom(TypeAs.UNWRAP_OPTIONAL_OF.apply(typeRef));
+    if (typeRef.getDimensions() > 0 || io.sundr.model.utils.Collections.isCollection(typeRef)) { // Handle Collections & Arrays
+      final TypeRef collectionType = TypeAs.combine(TypeAs.UNWRAP_ARRAY_OF, TypeAs.UNWRAP_COLLECTION_OF)
+        .apply(typeRef);
+      final T schema = internalFrom(name, collectionType);
+      return arrayLikeProperty(schema);
+    } else if (io.sundr.model.utils.Collections.IS_MAP.apply(typeRef)) { // Handle Maps
+      final TypeRef keyType = TypeAs.UNWRAP_MAP_KEY_OF.apply(typeRef);
+      boolean degraded = false;
+      if (keyType instanceof ClassRef) {
+        ClassRef classRef = (ClassRef) keyType;
+        if (!classRef.getFullyQualifiedName().equals("java.lang.String")) {
+          degraded = true;
+        } else {
+          final TypeRef valueType = TypeAs.UNWRAP_MAP_VALUE_OF.apply(typeRef);
+          classRef = (ClassRef) valueType;
+          if (!classRef.getFullyQualifiedName().equals("java.lang.String")) {
+            degraded = true;
+          }
+        }
+      } else {
+        degraded = true;
+      }
+      if (degraded) {
+        LOGGER.warn("Property '{}' with '{}' type is mapped to a string to string mapping because of CRD schemas limitations", name, typeRef);
+      }
+      return mapLikeProperty();
+    } else if (io.sundr.model.utils.Optionals.isOptional(typeRef)) { // Handle Optionals
+      return internalFrom(name, TypeAs.UNWRAP_OPTIONAL_OF.apply(typeRef));
     } else {
       final String typeName = COMMON_MAPPINGS.get(typeRef);
       if(typeName != null) { // we have a type that we handle specifically
@@ -224,12 +291,19 @@ public abstract class AbstractJsonSchema<T, B> {
   protected abstract T mappedProperty(TypeRef ref);
 
   /**
-   * Builds the schema for collection properties
+   * Builds the schema for array-like properties
    *
-   * @param schema the schema for the extracted element type for this collection-like property
-   * @return the schema for the collection-like property
+   * @param schema the schema for the extracted element type for this array-like property
+   * @return the schema for the array-like property
    */
-  protected abstract T collectionProperty(T schema);
+  protected abstract T arrayLikeProperty(T schema);
+
+  /**
+   * Builds the schema for map-like properties
+   *
+   * @return the schema for the map-like property
+   */
+  protected abstract T mapLikeProperty();
 
   /**
    * Builds the schema for standard, simple (e.g. string) property types

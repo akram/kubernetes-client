@@ -21,7 +21,7 @@ import io.fabric8.kubernetes.client.informers.ResourceEventHandler;
 import org.junit.jupiter.api.Test;
 
 import static junit.framework.TestCase.assertTrue;
-import static org.junit.Assert.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class ProcessorListenerTest {
   private static boolean addNotificationReceived, updateNotificationReceived, deleteNotificationReceived;
@@ -53,13 +53,6 @@ class ProcessorListenerTest {
     listener.add(new ProcessorListener.AddNotification<>(pod));
     listener.add(new ProcessorListener.UpdateNotification<>(null, pod));
     listener.add(new ProcessorListener.DeleteNotification<>(pod));
-
-    Thread listenerThread = new Thread(listener::run);
-    listenerThread.setDaemon(true);
-    listenerThread.start();
-
-    // Sleep 1 second for consuming notifications from queue
-    Thread.sleep(1000);
 
     assertTrue(addNotificationReceived);
     assertTrue(updateNotificationReceived);

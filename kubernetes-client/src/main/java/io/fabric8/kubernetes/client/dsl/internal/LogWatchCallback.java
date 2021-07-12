@@ -18,7 +18,6 @@ package io.fabric8.kubernetes.client.dsl.internal;
 import io.fabric8.kubernetes.client.Config;
 import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.dsl.LogWatch;
-import io.fabric8.kubernetes.client.utils.BlockingInputStreamPumper;
 import io.fabric8.kubernetes.client.utils.InputStreamPumper;
 import io.fabric8.kubernetes.client.utils.Utils;
 import okhttp3.Call;
@@ -35,14 +34,13 @@ import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.util.LinkedHashSet;
 import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static io.fabric8.kubernetes.client.utils.Utils.closeQuietly;
-import static io.fabric8.kubernetes.client.utils.Utils.shutdownExecutorService;
 
 public class LogWatchCallback implements LogWatch, Callback, AutoCloseable {
 
@@ -53,12 +51,9 @@ public class LogWatchCallback implements LogWatch, Callback, AutoCloseable {
     private final PipedInputStream output;
     private final Set<Closeable> toClose = new LinkedHashSet<>();
 
-    private final AtomicBoolean started = new AtomicBoolean(false);
-    private final ArrayBlockingQueue<Object> queue = new ArrayBlockingQueue<>(1);
+    private final CompletableFuture<Void> startedFuture = new CompletableFuture<>();
     private final ExecutorService executorService = Executors.newSingleThreadExecutor();
     private final AtomicBoolean closed = new AtomicBoolean(false);
-
-    private InputStreamPumper pumper;
 
     @Deprecated
     public LogWatchCallback(OutputStream out) {
@@ -96,27 +91,23 @@ public class LogWatchCallback implements LogWatch, Callback, AutoCloseable {
 
     /**
      * Performs the cleanup tasks:
-     * 1. closes the InputStream pumper
+     * 1. cancels the InputStream pumper
      * 2. closes all internally managed closeables (piped streams).
      *
      * The order of these tasks can't change or its likely that the pumper will through errors,
      * if the stream it uses closes before the pumper it self.
      */
     private void cleanUp() {
-      try {
-        if (!closed.compareAndSet(false, true)) {
-          return;
-        }
-
-        closeQuietly(pumper);
-        shutdownExecutorService(executorService);
-      } finally {
-        closeQuietly(toClose);
+      if (!closed.compareAndSet(false, true)) {
+        return;
       }
+
+      executorService.shutdownNow();
+      closeQuietly(toClose);
     }
 
     public void waitUntilReady() {
-      if (!Utils.waitUntilReady(queue, config.getRequestTimeout(), TimeUnit.MILLISECONDS)) {
+      if (!Utils.waitUntilReady(startedFuture, config.getRequestTimeout(), TimeUnit.MILLISECONDS)) {
         if (LOGGER.isDebugEnabled()) {
           LOGGER.warn("Log watch request has not been opened within: " + config.getRequestTimeout() + " millis.");
         }
@@ -136,29 +127,18 @@ public class LogWatchCallback implements LogWatch, Callback, AutoCloseable {
 
         LOGGER.error("Log Callback Failure.", ioe);
         cleanUp();
-        //We only need to queue startup failures.
-        if (!started.get()) {
-            queue.add(ioe);
-        }
+        startedFuture.completeExceptionally(ioe);
     }
 
     @Override
     public void onResponse(Call call, final Response response) throws IOException {
-       pumper = new BlockingInputStreamPumper(response.body().byteStream(), input -> {
-           try {
-               out.write(input);
-           } catch (IOException e) {
-               throw KubernetesClientException.launderThrowable(e);
-           }
-       }, () -> {
-         cleanUp();
-         response.close();
-       });
-
       if (!executorService.isShutdown()) {
-        executorService.submit(pumper);
-        started.set(true);
-        queue.add(true);
+        // the task will be cancelled via shutdownNow
+        InputStreamPumper.pump(response.body().byteStream(), out::write, executorService).whenComplete((o, t) -> {
+          cleanUp();
+          response.close();
+        });
+        startedFuture.complete(null);
       }
 
     }

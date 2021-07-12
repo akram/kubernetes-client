@@ -21,52 +21,37 @@ import org.slf4j.LoggerFactory;
 
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.Optional;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
 
 /**
  * ProcessorListener implements Runnable interface. It's supposed to run in background
- * and actually executes its event handler on notification. Note that it allows 1000
- * pending notification at maximum.
+ * and actually executes its event handler on notification. 
  *
  * This has been taken from official client: https://github.com/kubernetes-client/java/blob/master/util/src/main/java/io/kubernetes/client/informer/cache/ProcessorListener.java
  * which has been ported from official go client: https://github.com/kubernetes/client-go/blob/master/tools/cache/shared_informer.go#L570
+ * 
+ * <br>Modified to execute loosely coupled from its processing thread
  *
  * @param <T> type of ProcessorListener
  */
-public class ProcessorListener<T> implements Runnable {
+public class ProcessorListener<T> {
   private static final Logger log = LoggerFactory.getLogger(ProcessorListener.class);
   private long resyncPeriodInMillis;
   private ZonedDateTime nextResync;
-  private BlockingQueue<Notification<T>> queue;
   private ResourceEventHandler<T> handler;
-
+  
   public ProcessorListener(ResourceEventHandler<T> handler, long resyncPeriodInMillis) {
     this.resyncPeriodInMillis = resyncPeriodInMillis;
     this.handler = handler;
-    this.queue = new LinkedBlockingQueue<>();
 
     determineNextResync(ZonedDateTime.now());
   }
 
-  @Override
-  public void run() {
-    while (true) {
-      try {
-        queue.take().handle(handler);
-      } catch(InterruptedException ex) {
-        log.warn("Processor thread interrupted: {}", ex.getMessage());
-        Thread.currentThread().interrupt();
-        return;
-      } catch (Exception ex) {
-        log.error("Failed invoking {} event handler: {}", handler, ex.getMessage(), ex);
-      }
+  public void add(Notification<T> notification) {
+    try {
+      notification.handle(handler);
+    } catch (Exception ex) {
+      log.error("Failed invoking {} event handler: {}", handler, ex.getMessage(), ex);
     }
-  }
-
-  public void add(Notification<T> obj) {
-    Optional.ofNullable(obj).ifPresent(this.queue::add);
   }
 
   public void determineNextResync(ZonedDateTime now) {
@@ -120,17 +105,21 @@ public class ProcessorListener<T> implements Runnable {
   }
 
   public static final class DeleteNotification<T> extends Notification<T> {
+      
+    private boolean unknownFinalState;
+    
     public DeleteNotification(T oldObject) {
+        this(oldObject, false);
+    }
+    
+    public DeleteNotification(T oldObject, boolean unknownFinalState) {
       super(oldObject, null);
+      this.unknownFinalState = unknownFinalState;
     }
 
     @Override
     public void handle(ResourceEventHandler<T> resourceEventHandler) {
-      if (getOldObject() instanceof  DeltaFIFO.DeletedFinalStateUnknown) {
-        resourceEventHandler.onDelete(((DeltaFIFO.DeletedFinalStateUnknown<T>) getOldObject()).getObj(), true);
-      } else {
-        resourceEventHandler.onDelete(getOldObject(), false);
-      }
+      resourceEventHandler.onDelete(getOldObject(), unknownFinalState);
     }
   }
 }

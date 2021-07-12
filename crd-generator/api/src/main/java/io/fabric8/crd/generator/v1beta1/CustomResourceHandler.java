@@ -33,7 +33,8 @@ import io.fabric8.crd.generator.v1beta1.decorator.EnsureSingleStorageVersionDeco
 import io.fabric8.crd.generator.v1beta1.decorator.PromoteSingleVersionAttributesDecorator;
 import io.fabric8.crd.generator.v1beta1.decorator.SetServedVersionDecorator;
 import io.fabric8.crd.generator.v1beta1.decorator.SetStorageVersionDecorator;
-import io.sundr.codegen.model.TypeDef;
+import io.fabric8.crd.generator.v1beta1.decorator.SortPrinterColumnsDecorator;
+import io.sundr.model.TypeDef;
 import java.util.Optional;
 
 public class CustomResourceHandler extends AbstractCustomResourceHandler {
@@ -81,7 +82,7 @@ public class CustomResourceHandler extends AbstractCustomResourceHandler {
       resources.decorate(new AddLabelSelectorPathDecorator(name, version, path));
     });
 
-    if (Types.findStatusProperty(def).isPresent()) {
+    if (config.statusClassName().isPresent()) {
       resources.decorate(new AddSubresourcesDecorator(name, version));
       resources.decorate(new AddStatusSubresourceDecorator(name, version));
     }
@@ -90,5 +91,11 @@ public class CustomResourceHandler extends AbstractCustomResourceHandler {
     resources.decorate(new SetStorageVersionDecorator(name, version, config.storage()));
     resources.decorate(new EnsureSingleStorageVersionDecorator(name));
     resources.decorate(new PromoteSingleVersionAttributesDecorator(name));
+    resources.decorate(new SortPrinterColumnsDecorator(name, version));
+  }
+
+  @Override
+  public void handle(CustomResourceInfo config) {
+    super.handle(config);
   }
 }

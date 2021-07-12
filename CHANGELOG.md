@@ -1,9 +1,108 @@
 ## CHANGELOG
 
-### 5.4-SNAPSHOT
+### 5.6-SNAPSHOT
 
 #### Bugs
+* Fix #3304: Prevent NPE in after informer stop
+* Fix #3083: CertificateException due to PEM being decoded in CertUtils
+* Fix #3295: Fix wrong kind getting registered in KubernetesDeserializer in SharedInformerFactory
+
+#### Improvements
+* Fix #3284: refined how builders are obtained / used by HasMetadataOperation
+
+#### Dependency Upgrade
+* Update Tekton Pipeline Model to v0.25.0
+
+#### New Features
+* Fix #3291: Retrying the HTTP operation in case of IOException too
+* Fix #2712: Add support for watching logs in multi-container Controller resources (Deployments, StatefulSets, ReplicaSet etc)
+
+### 5.5.0 (2021-06-30)
+
+#### Bugs
+* Fix #3064: KubernetesMockServer should not read local `.kube/config` while initializing client
+* Fix #3126: a KubernetesClientException will be thrown from patch/replace rather than a null being returned when the item does not exist
+* Fix #3121: ServiceOperationImpl replace will throw a KubernetesClientException rather than a NPE if the item doesn't exist
+* Fix #3189: VersionInfo contains null data in OpenShift 4.6
+* Fix #3190: Ignore fields with name "-" when using the Go to JSON schema generator
+* Fix #3144: walking back the assumption that resource/status should be a subresource for the crud mock server, now it will be only if a registered crd indicates that it should be
+* Fix #3194: the mock server will now infer the namespace from the path
+* Fix #3076: the MetadataObject for CustomResource is now seen as Buildable
+* Fix #3216: made the mock server aware of apiVersions
+* Fix #3225: Pod metric does not have corresponding label selector variant
+* Fix #3243: pipes provided to exec command are no longer closed on connection close, so that client can fully read the buffer after the command finishes.
+* Fix #3272: prevent index npe after informer sees an empty list
+* Fix #3275: filter related dsl methods withLabel, withField, etc. should not modify the current context.  If you need similar behavior to the previous use `Filterable.withNewFilter`.
+* Fix #3271: waitUntilReady and waitUntilCondition should handle resource too old
+* Fix #3278: `Waitable` methods should not be available at a list context
+
+#### Improvements
+* Fix #3078: adding javadocs to further clarify patch, edit, replace, etc. and note the possibility of items being modified.
+* Fix #3149: replace(item) will consult the item's resourceVersion for the first PUT attempt when not specifically locked on a resourceVersion
+* Fix #3135: added mock crud support for patch status, and will return exceptions for unsupported patch types
+* Fix #3072: various changes to refine how threads are handled by informers.  Note that the SharedInformer.run call is now blocking when starting the informer.
+* Fix #3143: a new SharedInformerEventListener.onException(SharedIndexInformer, Exception) method is available to determine which informer could not start.
+* Fix #3170: made HttpClientUtils.createHttpClient(Config, Consumer<OkHttpClient.Builder>) public to allow overriding custom http client properties 
+* Fix #3202: make pod upload connection and request timeouts configurable
+* Fix #3185: Introduce GenericKubernetesResource, used as delegate in RawCustomResourceOperationsImpl
+* Fix #3001: WatchConnectionManager logs that provide little information are now logged at a lower level
+* Fix #3186: WebSockets and HTTP connections are closed as soon as possible for Watches.
+* Fix #2937: Add `SharedInformerFactory#getExistingSharedIndexInformers` method to return list of registered informers
+* Fix #3239: Add the `Informable` interface for context specific dsl methods to create `SharedIndexInformer`s.
+* Fix #3101: making isWatching a health check for the informer
+
+#### Dependency Upgrade
+* Fix #2741: Update Knative Model to v0.23.0
+
+#### New Features
+* Fix #3133: Add DSL Support for `authorization.openshift.io/v1` resources in OpenShiftClient
+* Fix #3166: Add DSL Support for `machineconfiguration.openshift.io/v1` resources in OpenShiftClient
+* Fix #3142: Add DSL support for missing resources in `operator.openshift.io` and `monitoring.coreos.com` apiGroups
+* Fix #2565: Add support for CertManager extension
+* Fix #3150: Add DSL support for missing resources in `template.openshift.io`, `helm.openshift.io`, `network.openshift.io`, `user.openshift.io` apigroups
+* Fix #3087: Support HTTP operation retry with exponential backoff (for status code >= 500)
+* Fix #3193:Add DSL support for `autoscaling.openshift.io` resources in OpenShiftClient
+* Fix #3209: Add DSL support for PodSecurityPolicySubjectReview, PodSecurityPolicyReview, PodSecurityPolicySelfSubjectReview in `security.openshift.io/v1` apiGroup to OpenShiftClient
+* Fix #3207: Add DSL support for OperatorCondition, Operator, PackageManifest in `operators.coreos.com` apiGroup to OpenShiftClient 
+* Fix #3201: Add support for `tuned.openshift.io` apiGroup in OpenShiftClient DSL
+* Fix #3205: Add DSL support for ConsolePlugin and ConsoleQuickStart in `console.openshift.io` apiGroup
+* Fix #3222: Add DSL support for `user.openshift.io/v1` Identity in OpenShiftClient DSL
+* Fix #3222: Add DSL support for OpenShift Whereabouts CNI Model `whereabouts.cni.cncf.io` to OpenShiftClient DSL
+* Fix #3224: Add DSL support for OpenShift Kube Storage Version Migrator resources in OpenShiftClient DSL
+* Fix #3228: Add support for Dynamic informers for custom resources in KubernetesClient
+* Fix #3270: Add DSL support for ClusterInterceptors to TektonClient
+
+#### _**Note**_: Breaking changes in the API
+##### DSL Changes:
+- #3127 `StatusUpdatable.updateStatus` deprecated, please use patchStatus, editStatus, or replaceStatus
+- #3239 deprecated methods on SharedInformerFactory directly dealing with the OperationContext, withName, and withNamespace - the Informable interface should be used instead.
+- #3271 `Waitable.waitUntilReady` and `Waitable.waitUntilCondition` with throw a KubernetesClientTimeoutException instead of an IllegalArgumentException on timeout.  The methods will also no longer throw an interrupted exception.
+  `Waitable.withWaitRetryBackoff` and the associated constants are now deprecated.
+
+##### Util Changes:
+- #3197 `Utils.waitUntilReady` now accepts a Future, rather than a BlockingQueue
+- #3169 `Utils.shutdownExecutorService` removed in favor of direct usage of shutdownNow where appropriate.  
+  The stream pumper related classes were also simplified to utility methods on InputStreamPumper.
+
+### 5.4.1 (2021-06-01)
+
+#### Bugs
+* Fix #3181: Properly handling of JsonProperty when generating CRDs
+* Fix #3172: Use File.toURI() to create the generated CRD URI
+* Fix #3152: Retry only Non-Restful Create-only resources in OpenShiftOAuthInterceptor
+* Fix #3189: VersionInfo contains null data in OpenShift 4.6
+
+### 5.4.0 (2021-05-19)
+
+#### Bugs
+* Fix #3040: Consistently order printer columns by JSON path to prevent undue changes in generated CRDs
+* Fix #3041: Properly output `additionalProperties` field for Maps, output warning for unsupported complex maps
+* Fix #3036: Fix file descriptor leak when loading cacerts file
+* Fix #3038: Upgrade TLS versions in mock servers to 1.2.
+* Fix #3037: Account for JsonProperty annotations when computing properties' name
 * Fix #3014: Resync Future is canceled and resync executor is shutdown on informer stop
+* Fix #2529: SelfSubjectAccessReview not working with OpenShiftClient
+* Fix #2978: Fix SharedInformer NPE on initial requests while syncing
 * Fix #2989: serialization will generate valid yaml when using subtypes
 * Fix #2991: reduced the level of ReflectWatcher event received log
 * Fix #2992: allowing Watch auto-reconnect for shared informers
@@ -12,20 +111,41 @@
 * Fix #3000: Set `no_proxy` in the okhttp builder in case the `proxy_url` is null
 * Fix #3011: properly handle enum types for additional printer columns
 * Fix #3020: annotations should now properly have their associated values when processing CRDs from the API
+* Fix #3016: Use scheduleWithFixedDelay for resync task execution
+* Fix #2991: reduced the level of ReflectWatcher event received log
 * Fix #3027: fix NPE when sorting events in KubernetesResourceUtil
+* Fix #3054:  missing entry for Trigger in TektonTriggersResourceMappingProvider
+* Fix #3047: NPE when getting version when there is no build date
+* Fix #3024: stopAllRegisteredInformers will not call startWatcher
+* Fix #3067: Added a patch(PatchContext, item) operation to be more explicit about patching and diffing behavior
+* Fix #3097: refresh token with autoconfigure even if authprovider is null
 
 #### Improvements
+* Fix #2788: Support FIPS mode in kubernetes-client with BouncyCastleFipsProvider
 * Fix #2910: Move crd-generator tests from kubernetes-itests to kubernetes-tests
 * Fix #3005: Make it possible to select which CRD version is generated / improve output
+* Fix #3015: Thread interruption in a nominal case (like closing the client) are now logged in debug
+* Fix #3057: Removed debug calls for CustomResource during deserialization
+* Fix #3050: More enforcement of the informer lifecycle
+* Fix #3061: Removed the deltafifo from the informer logic
+* Fix #3081: Use apiGroupName in generated package for OpenShiftClient Handler/OperationsImpl classes
+* Fix #3089: Allowing patch/edit to infer context from the item
+* Fix #3066: Added replaceStatus (PUT), editStatus (JSON PATCH), and patchStatus (JSON MERGE PATCH) methods to support non-locking status updates
 
 #### Dependency Upgrade
 * Fix #2979: Update Kubernetes Model to v1.21.0
+* Fix #3099: Update Tekton Triggers Model to v0.13.0
+* Fix #3118: Update to sundrio 0.40.1
 
 #### New Features
 * Fix #2984: Add support for `flowcontrol.apiserver.k8s.io/v1beta1` FlowSchema and PriorityLevelConfiguration
 * Fix #2980: Add DSL Support for `apps/v1#ControllerRevision` resource
 * Fix #2981: Add DSL support for `storage.k8s.io/v1beta1` CSIDriver, CSINode and VolumeAttachment
 * Fix #2912: Add DSL support for `storage.k8s.io/v1beta1` CSIStorageCapacity
+* Fix #2701: Better support for patching in KuberntesClient
+* Fix #3034: Added a SharedInformer.isRunning method
+* Fix #3088: mock server will assume /status is a subresource, and other refinements to match kube behavior
+* Fix #3111: Add DSL Support for `config.openshift.io/v1` resources in OpenShiftClient 
 
 #### _**Note**_: Breaking changes in the API
 ##### DSL Changes:

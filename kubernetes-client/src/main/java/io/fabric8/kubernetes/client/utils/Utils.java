@@ -40,9 +40,15 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Random;
-import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.stream.Stream;
 import org.slf4j.Logger;
@@ -57,6 +63,9 @@ public class Utils {
   public static final String PATH_WINDOWS = "Path";
   public static final String PATH_UNIX = "PATH";
   private static final Random random = new Random();
+  
+  private static final ExecutorService SHARED_POOL = Executors.newCachedThreadPool();
+  private static final CachedSingleThreadScheduler SHARED_SCHEDULER = new CachedSingleThreadScheduler();
 
   private Utils() {
   }
@@ -135,69 +144,37 @@ public class Utils {
   /**
    * Wait until an other thread signals the completion of a task.
    * If an exception is passed, it will be propagated to the caller.
-   * @param queue     The communication channel.
+   * @param future    The communication channel.
    * @param amount    The amount of time to wait.
    * @param timeUnit  The time unit.
    *
    * @return a boolean value indicating resource is ready or not.
    */
-  public static boolean waitUntilReady(BlockingQueue<Object> queue, long amount, TimeUnit timeUnit) {
+  public static boolean waitUntilReady(Future<?> future, long amount, TimeUnit timeUnit) {
     try {
-      Object obj = queue.poll(amount, timeUnit);
-      if (obj instanceof Boolean) {
-        return (Boolean) obj;
-      } else if (obj instanceof Throwable) {
-        Throwable t = (Throwable) obj;
-        t.addSuppressed(new Throwable("waiting here"));
-        throw t;
-      }
+      future.get(amount, timeUnit);
+      return true;
+    } catch (TimeoutException e) {
       return false;
-    } catch (Throwable t) {
-      throw KubernetesClientException.launderThrowable(t);
+    } catch (ExecutionException e) {
+      Throwable t = e;
+      if (e.getCause() != null) {
+        t = e.getCause();
+      }
+      t.addSuppressed(new Throwable("waiting here"));
+      throw KubernetesClientException.launderThrowable(t);      
+    } catch (Exception e) {
+      throw KubernetesClientException.launderThrowable(e);
     }
   }
-
+  
   /**
-   * Closes the specified {@link ExecutorService}.
-   * @param executorService   The executorService.
-   * @return True if shutdown is complete.
+   * Similar to {@link #waitUntilReady(Future, long, TimeUnit)}, but will always throw an exception if not ready
    */
-  public static boolean shutdownExecutorService(ExecutorService executorService) {
-    if (executorService == null) {
-      return false;
+  public static void waitUntilReadyOrFail(Future<?> future, long amount, TimeUnit timeUnit) {
+    if (!waitUntilReady(future, amount, timeUnit)) {
+      throw new KubernetesClientException("not ready after " + amount + " " + timeUnit);
     }
-    //If it hasn't already shutdown, do shutdown.
-    if (!executorService.isShutdown()) {
-      executorService.shutdown();
-    }
-
-    try {
-      //Wait for clean termination
-      if (executorService.awaitTermination(5, TimeUnit.SECONDS)) {
-        return true;
-      }
-
-      //If not already terminated (via shutdownNow) do shutdownNow.
-      if (!executorService.isTerminated()) {
-        executorService.shutdownNow();
-      }
-
-      if (executorService.awaitTermination(5, TimeUnit.SECONDS)) {
-        return true;
-      }
-
-      if (LOGGER.isDebugEnabled()) {
-        List<Runnable> tasks = executorService.shutdownNow();
-        if (!tasks.isEmpty()) {
-          LOGGER.debug("ExecutorService was not cleanly shutdown, after waiting for 10 seconds. Number of remaining tasks: {}", tasks.size());
-        }
-      }
-    } catch (InterruptedException e) {
-      executorService.shutdownNow();
-      //Preserve interrupted status
-      Thread.currentThread().interrupt();
-    }
-    return false;
   }
 
   /**
@@ -450,5 +427,52 @@ public class Utils {
   private static String getOperatingSystemFromSystemProperty() {
     return System.getProperty(OS_NAME);
   }
+  
+  /**
+   * Create a {@link ThreadFactory} with daemon threads and a thread
+   * name based upon the object passed in.
+   */
+  public static ThreadFactory daemonThreadFactory(Object forObject) {
+    String name = forObject.getClass().getSimpleName() + "-" + System.identityHashCode(forObject);
+    return daemonThreadFactory(name);
+  }
 
+  static ThreadFactory daemonThreadFactory(String name) {
+    return new ThreadFactory() {
+      ThreadFactory threadFactory = Executors.defaultThreadFactory();
+      
+      @Override
+      public Thread newThread(Runnable r) {
+        Thread ret = threadFactory.newThread(r); 
+        ret.setName(name + "-" + ret.getName());
+        ret.setDaemon(true);
+        return ret;
+      }
+    };
+  }
+  
+  /**
+   * Schedule a task to run in the given {@link Executor} - which should run the task in a different thread as to not
+   * hold the scheduling thread
+   */
+  public static ScheduledFuture<?> schedule(Executor executor, Runnable command, long delay, TimeUnit unit) {
+    return SHARED_SCHEDULER.schedule(() -> executor.execute(command), delay, unit);
+  }
+
+  /**
+   * Schedule a repeated task to run in the given {@link Executor} - which should run the task in a different thread as to not
+   * hold the scheduling thread
+   */
+  public static ScheduledFuture<?> scheduleAtFixedRate(Executor executor, Runnable command, long initialDelay, long delay, TimeUnit unit) {
+    // because of the hand-off to the other executor, there's no difference between rate and delay
+    return SHARED_SCHEDULER.scheduleWithFixedDelay(() -> executor.execute(command), initialDelay, delay, unit);
+  }
+  
+  /**
+   * Get the common executor service - callers should not shutdown this service
+   */
+  public static ExecutorService getCommonExecutorSerive() {
+    return SHARED_POOL;
+  }
+    
 }

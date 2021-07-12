@@ -22,14 +22,14 @@ import io.fabric8.mockwebserver.Context;
 import io.fabric8.mockwebserver.ServerRequest;
 import io.fabric8.mockwebserver.ServerResponse;
 import io.fabric8.volumesnapshot.client.DefaultVolumeSnapshotClient;
-import io.fabric8.volumesnapshot.client.VolumeSnapshotClient;
+import io.fabric8.volumesnapshot.client.NamespacedVolumeSnapshotClient;
 import okhttp3.mockwebserver.Dispatcher;
 import okhttp3.mockwebserver.MockWebServer;
 
 import java.util.Map;
 import java.util.Queue;
 
-import static okhttp3.TlsVersion.TLS_1_0;
+import static okhttp3.TlsVersion.TLS_1_2;
 
 public class VolumeSnapshotMockServer extends KubernetesMockServer {
   public VolumeSnapshotMockServer() {
@@ -49,13 +49,13 @@ public class VolumeSnapshotMockServer extends KubernetesMockServer {
     return new String[]{"/api", "/apis/snapshot.storage.k8s.io"};
   }
 
-  public VolumeSnapshotClient createVolumeSnapshot() {
+  public NamespacedVolumeSnapshotClient createVolumeSnapshot() {
     // FIXME
     Config config = new ConfigBuilder()
       .withMasterUrl(url("/"))
       .withNamespace("test")
       .withTrustCerts(true)
-      .withTlsVersions(TLS_1_0)
+      .withTlsVersions(TLS_1_2)
       .build();
     return new DefaultVolumeSnapshotClient(config);
   }

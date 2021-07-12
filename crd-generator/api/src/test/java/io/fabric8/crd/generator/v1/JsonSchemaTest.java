@@ -20,11 +20,12 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.fabric8.crd.example.annotated.Annotated;
 import io.fabric8.crd.example.basic.Basic;
 import io.fabric8.crd.example.person.Person;
 import io.fabric8.crd.generator.utils.Types;
 import io.fabric8.kubernetes.api.model.apiextensions.v1.JSONSchemaProps;
-import io.sundr.codegen.model.TypeDef;
+import io.sundr.model.TypeDef;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -64,6 +65,21 @@ class JsonSchemaTest {
     assertEquals("integer", spec.get("myInt").getType());
     Map<String, JSONSchemaProps> status = properties.get("status").getProperties();
     assertEquals("string", status.get("message").getType());
+  }
+
+  @Test
+  void shouldOverridePropertyNameIfJacksonAnnotated() {
+    TypeDef annotated = Types.typeDefFrom(Annotated.class);
+    JSONSchemaProps schema = JsonSchema.from(annotated);
+    assertNotNull(schema);
+    Map<String, JSONSchemaProps> properties = schema.getProperties();
+    assertEquals(2, properties.size());
+    Map<String, JSONSchemaProps> spec = properties.get("spec").getProperties();
+    assertEquals(4, spec.size());
+    assertTrue(spec.containsKey("from-field"));
+    assertTrue(spec.containsKey("from-getter"));
+    assertTrue(spec.containsKey("unnamed"));
+    assertTrue(spec.containsKey("emptySetter"));
   }
 
 }

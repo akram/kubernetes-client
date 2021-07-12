@@ -22,13 +22,15 @@ import io.fabric8.kubernetes.client.KubernetesClientException;
 import io.fabric8.kubernetes.client.dsl.Resource;
 import io.fabric8.kubernetes.client.dsl.RollableScalableResource;
 import io.fabric8.kubernetes.client.dsl.base.HasMetadataOperation;
+import io.fabric8.kubernetes.client.dsl.base.PatchContext;
+import io.fabric8.kubernetes.client.dsl.base.PatchType;
 import io.fabric8.kubernetes.client.dsl.internal.RollingOperationContext;
 import io.fabric8.kubernetes.client.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Objects;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -92,7 +94,7 @@ public abstract class RollableScalableResourceOperation<T extends HasMetadata, L
    * Let's wait until there are enough Ready pods.
    */
   private void waitUntilScaled(final int count) {
-    final ArrayBlockingQueue<Object> queue = new ArrayBlockingQueue<>(1);
+    final CompletableFuture<Void> scaledFuture = new CompletableFuture<>();
     final AtomicReference<Integer> replicasRef = new AtomicReference<>(0);
 
     final String name = checkName(getItem());
@@ -104,9 +106,9 @@ public abstract class RollableScalableResourceOperation<T extends HasMetadata, L
         //If the resource is gone, we shouldn't wait.
         if (t == null) {
           if (count == 0) {
-            queue.put(true);
+            scaledFuture.complete(null);
           } else {
-            queue.put(new IllegalStateException("Can't wait for " + getType().getSimpleName() + ": " +name + " in namespace: " + namespace + " to scale. Resource is no longer available."));
+            scaledFuture.completeExceptionally(new IllegalStateException("Can't wait for " + getType().getSimpleName() + ": " +name + " in namespace: " + namespace + " to scale. Resource is no longer available."));
           }
           return;
         }
@@ -116,7 +118,7 @@ public abstract class RollableScalableResourceOperation<T extends HasMetadata, L
         long generation = t.getMetadata().getGeneration() != null ? t.getMetadata().getGeneration() : -1;
         long observedGeneration = getObservedGeneration(t);
         if (observedGeneration >= generation && Objects.equals(desiredReplicas, currentReplicas)) {
-          queue.put(true);
+          scaledFuture.complete(null);
         }
         Log.debug("Only {}/{} replicas scheduled for {}: {} in namespace: {} seconds so waiting...",
           currentReplicas, desiredReplicas, t.getKind(), t.getMetadata().getName(), namespace);
@@ -128,7 +130,7 @@ public abstract class RollableScalableResourceOperation<T extends HasMetadata, L
     ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
     ScheduledFuture poller = executor.scheduleWithFixedDelay(tPoller, 0, POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
     try {
-      if (Utils.waitUntilReady(queue, getConfig().getScaleTimeout(), TimeUnit.MILLISECONDS)) {
+      if (Utils.waitUntilReady(scaledFuture, getConfig().getScaleTimeout(), TimeUnit.MILLISECONDS)) {
         Log.debug("{}/{} pod(s) ready for {}: {} in namespace: {}.",
           replicasRef.get(), count, getType().getSimpleName(), name, namespace);
       } else {
@@ -164,11 +166,11 @@ public abstract class RollableScalableResourceOperation<T extends HasMetadata, L
   }
 
   @Override
-  public T patch(T t) {
-    if (!rolling) {
-      return super.patch(t);
+  public T patch(PatchContext patchContext, T item) {
+    if (!rolling  || patchContext == null || patchContext.getPatchType() != PatchType.JSON) {
+      return super.patch(patchContext, item);
     }
-    return getRollingUpdater(rollingTimeout, rollingTimeUnit).rollUpdate(getMandatory(), t);
+    return getRollingUpdater(rollingTimeout, rollingTimeUnit).rollUpdate(getMandatory(), item);
   }
 
 }

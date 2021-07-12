@@ -23,7 +23,7 @@
   <parent>
     <groupId>io.fabric8</groupId>
     <artifactId>kubernetes-model-generator</artifactId>
-    <version>5.4-SNAPSHOT</version>
+    <version>5.6-SNAPSHOT</version>
   </parent>
 
   <artifactId>kubernetes-model-core</artifactId>
@@ -44,51 +44,24 @@
       <artifactId>mockito-core</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
     <plugins>
       <plugin>
-        <groupId>org.jsonschema2pojo</groupId>
-        <artifactId>jsonschema2pojo-maven-plugin</artifactId>
-        <configuration>
-          <customAnnotator>io.fabric8.kubernetes.jsonschema2pojo.KubernetesCoreTypeAnnotator</customAnnotator>
-          <customRuleFactory>io.fabric8.kubernetes.jsonschema2pojo.Fabric8RuleFactory</customRuleFactory>
-        </configuration>
-      </plugin>
-      <plugin>
-        <artifactId>maven-antrun-plugin</artifactId>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
         <executions>
           <execution>
-            <phase>generate-sources</phase>
+            <id>attach-artifacts</id>
             <configuration>
-              <target>
-                <echo>removing the duplicate generated class</echo>
-                <delete
-                  file="${project.build.directory}/generated-sources/io/fabric8/kubernetes/api/model/Duration.java"
-                  verbose="true" />
-                <delete
-                  file="${project.build.directory}/generated-sources/io/fabric8/kubernetes/api/model/HasMetadata.java"
-                  verbose="true" />
-                <delete
-                  file="${project.build.directory}/generated-sources/io/fabric8/kubernetes/api/model/IntOrString.java"
-                  verbose="true" />
-                <delete
-                  file="${project.build.directory}/generated-sources/io/fabric8/kubernetes/api/model/Quantity.java"
-                  verbose="true" />
-                <delete
-                  file="${project.build.directory}/generated-sources/io/fabric8/kubernetes/api/model/WatchEvent.java"
-                  verbose="true" />
-                <delete verbose="true">
-                  <fileset dir="${project.build.directory}/generated-sources">
-                    <include name="*.java" />
-                  </fileset>
-                </delete>
-              </target>
+              <skipAttach>false</skipAttach>
             </configuration>
-            <goals>
-              <goal>run</goal>
-            </goals>
           </execution>
         </executions>
       </plugin>
@@ -140,15 +113,31 @@
               io.fabric8.kubernetes.api.model.storage,
               io.fabric8.kubernetes.api.model.storage.v1beta1,
               io.fabric8.openshift.api.model;resolution:=optional,
+              io.fabric8.openshift.api.model.clusterautoscaling.v1;resolution:=optional,
+              io.fabric8.openshift.api.model.clusterautoscaling.v1beta1;resolution:=optional,
               io.fabric8.openshift.api.model.runtime;resolution:=optional,
               io.fabric8.openshift.api.model.console.v1;resolution:=optional,
+              io.fabric8.openshift.api.model.console.v1alpha1;resolution:=optional,
               io.fabric8.openshift.api.model.monitoring.v1;resolution:=optional,
+              io.fabric8.openshift.api.model.monitoring.v1alpha1;resolution:=optional,
               io.fabric8.openshift.api.model.operator;resolution:=optional,
               io.fabric8.openshift.api.model.operator.v1;resolution:=optional,
               io.fabric8.openshift.api.model.operator.v1alpha1;resolution:=optional,
+              io.fabric8.openshift.api.model.operator.controlplane.v1alpha1;resolution:=optional,
               io.fabric8.openshift.api.model.operatorhub.manifests;resolution:=optional,
               io.fabric8.openshift.api.model.operatorhub.v1;resolution:=optional,
               io.fabric8.openshift.api.model.operatorhub.v1alpha1;resolution:=optional,
+              io.fabric8.openshift.api.model.operatorhub.lifecyclemanager.v1;resolution:=optional,
+              io.fabric8.openshift.api.model.machineconfig.v1;resolution:=optional,
+              io.fabric8.openshift.api.model.machine.v1beta1;resolution:=optional,
+              io.fabric8.openshift.api.model.tuned.v1;resolution:=optional,
+              io.fabric8.openshift.api.model.whereabouts.v1alpha1;resolution:=optional,
+              io.fabric8.openshift.api.model.storageversionmigrator.v1alpha1;resolution:=optional,
+              io.fabric8.openshift.api.model.miscellaneous.cloudcredential.v1;resolution:=optional,
+              io.fabric8.openshift.api.model.miscellaneous.cncf.cni.v1;resolution:=optional,
+              io.fabric8.openshift.api.model.miscellaneous.imageregistry.operator.v1;resolution:=optional,
+              io.fabric8.openshift.api.model.miscellaneous.metal3.v1alpha1;resolution:=optional,
+              io.fabric8.openshift.api.model.miscellaneous.network.operator.v1;resolution:=optional,
             </Import-Package>
             <Private-Package>io.fabric8.kubernetes.internal</Private-Package>
             <Export-Package>
@@ -167,26 +156,61 @@
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>build-helper-maven-plugin</artifactId>
-        <version>${maven.buildhelper.plugin.version}</version>
-        <executions>
-          <execution>
-            <id>attach-artifacts</id>
-            <phase>package</phase>
-            <goals>
-              <goal>attach-artifact</goal>
-            </goals>
-            <configuration>
-              <artifacts>
-                <artifact>
-                  <file>${project.build.outputDirectory}/schema/kube-schema.json</file>
-                  <type>json</type>
-                  <classifier>schema</classifier>
-                </artifact>
-              </artifacts>
-            </configuration>
-          </execution>
-        </executions>
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>generate</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.jsonschema2pojo</groupId>
+            <artifactId>jsonschema2pojo-maven-plugin</artifactId>
+            <configuration>
+              <customAnnotator>io.fabric8.kubernetes.jsonschema2pojo.KubernetesCoreTypeAnnotator</customAnnotator>
+              <customRuleFactory>io.fabric8.kubernetes.jsonschema2pojo.Fabric8RuleFactory</customRuleFactory>
+            </configuration>
+          </plugin>
+          <plugin>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <executions>
+              <execution>
+                <phase>generate-sources</phase>
+                <configuration>
+                  <target>
+                    <echo>Removing the duplicate generated class</echo>
+                    <delete
+                      file="${generate.targetDirectory}/io/fabric8/kubernetes/api/model/Duration.java"
+                      verbose="true" />
+                    <delete
+                      file="${generate.targetDirectory}/io/fabric8/kubernetes/api/model/HasMetadata.java"
+                      verbose="true" />
+                    <delete
+                      file="${generate.targetDirectory}/io/fabric8/kubernetes/api/model/IntOrString.java"
+                      verbose="true" />
+                    <delete
+                      file="${generate.targetDirectory}/io/fabric8/kubernetes/api/model/Quantity.java"
+                      verbose="true" />
+                    <delete
+                      file="${generate.targetDirectory}/io/fabric8/kubernetes/api/model/WatchEvent.java"
+                      verbose="true" />
+                    <delete verbose="true">
+                      <fileset dir="${generate.targetDirectory}">
+                        <include name="*.java" />
+                      </fileset>
+                    </delete>
+                  </target>
+                </configuration>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

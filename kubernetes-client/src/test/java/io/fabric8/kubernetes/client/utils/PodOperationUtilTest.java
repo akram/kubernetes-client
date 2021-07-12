@@ -15,39 +15,35 @@
  */
 package io.fabric8.kubernetes.client.utils;
 
-import io.fabric8.kubernetes.api.model.DeletionPropagation;
-import io.fabric8.kubernetes.api.model.LabelSelector;
-import io.fabric8.kubernetes.api.model.ListOptions;
-import io.fabric8.kubernetes.api.model.ObjectReference;
 import io.fabric8.kubernetes.api.model.Pod;
 import io.fabric8.kubernetes.api.model.PodBuilder;
 import io.fabric8.kubernetes.api.model.PodList;
 import io.fabric8.kubernetes.api.model.PodListBuilder;
-import io.fabric8.kubernetes.client.Watch;
-import io.fabric8.kubernetes.client.Watcher;
-import io.fabric8.kubernetes.client.dsl.Deletable;
-import io.fabric8.kubernetes.client.dsl.EditReplacePatchDeletable;
 import io.fabric8.kubernetes.client.dsl.FilterWatchListDeletable;
 import io.fabric8.kubernetes.client.dsl.Gettable;
+import io.fabric8.kubernetes.client.dsl.LogWatch;
 import io.fabric8.kubernetes.client.dsl.PodResource;
-import io.fabric8.kubernetes.client.dsl.Waitable;
-import io.fabric8.kubernetes.client.dsl.WatchAndWaitable;
 import io.fabric8.kubernetes.client.dsl.base.OperationContext;
 import io.fabric8.kubernetes.client.dsl.internal.core.v1.PodOperationsImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
+import java.io.ByteArrayOutputStream;
+import java.io.Reader;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Predicate;
 
+import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -80,11 +76,12 @@ class PodOperationUtilTest {
   @Test
   void testGetGenericPodOperations() {
     // When
-    PodOperationsImpl podOperations = PodOperationUtil.getGenericPodOperations(operationContext, false, 5);
+    PodOperationsImpl podOperations = PodOperationUtil.getGenericPodOperations(operationContext, false, 5, "container1");
 
     // Then
-    assertNotNull(podOperations);
-    assertNull(podOperations.getName());
+    assertThat(podOperations).isNotNull();
+    assertThat(podOperations.getName()).isNull();
+    assertThat(podOperations.getContext().getContainerId()).isEqualTo("container1");
   }
 
   @Test
@@ -121,6 +118,78 @@ class PodOperationUtilTest {
     assertEquals(1, podResources.size());
   }
 
+  @Test
+  void testWatchLogSinglePod() {
+    // Given
+    PodResource<Pod> podResource = Mockito.mock(PodResource.class, Mockito.RETURNS_DEEP_STUBS);
+    ByteArrayOutputStream byteArrayOutputStream = Mockito.mock(ByteArrayOutputStream.class, Mockito.RETURNS_DEEP_STUBS);
+
+    // When
+    LogWatch logWatch = PodOperationUtil.watchLog(createMockPodResourceList(podResource), byteArrayOutputStream);
+
+    // Then
+    assertThat(logWatch).isNotNull();
+    verify(podResource, times(1)).watchLog(byteArrayOutputStream);
+  }
+
+  @Test
+  void testWatchLogMultiplePodReplicasPicksFirstPod() {
+    // Given
+    PodResource<Pod> p1 = Mockito.mock(PodResource.class, Mockito.RETURNS_DEEP_STUBS);
+    PodResource<Pod> p2 = Mockito.mock(PodResource.class, Mockito.RETURNS_DEEP_STUBS);
+    ByteArrayOutputStream byteArrayOutputStream = Mockito.mock(ByteArrayOutputStream.class, Mockito.RETURNS_DEEP_STUBS);
+
+    // When
+    LogWatch logWatch = PodOperationUtil.watchLog(createMockPodResourceList(p1, p2), byteArrayOutputStream);
+
+    // Then
+    assertThat(logWatch).isNotNull();
+    verify(p1, times(1)).watchLog(byteArrayOutputStream);
+    verify(p2, times(0)).watchLog(byteArrayOutputStream);
+  }
+
+  @Test
+  void testWatchLogEmptyPodResourceList() {
+    assertThat(PodOperationUtil.watchLog(Collections.emptyList(), null)).isNull();
+  }
+
+  @Test
+  void testGetLogReaderEmptyPodResourceList() {
+    assertThat(PodOperationUtil.getLogReader(Collections.emptyList())).isNull();
+  }
+
+  @Test
+  void testGetLogReaderMultiplePodReplicasPicksFirstPod() {
+    // Given
+    PodResource<Pod> p1 = Mockito.mock(PodResource.class, Mockito.RETURNS_DEEP_STUBS);
+    PodResource<Pod> p2 = Mockito.mock(PodResource.class, Mockito.RETURNS_DEEP_STUBS);
+
+    // When
+    Reader reader = PodOperationUtil.getLogReader(createMockPodResourceList(p1, p2));
+
+    // Then
+    assertThat(reader).isNotNull();
+    verify(p1, times(1)).getLogReader();
+    verify(p2, times(0)).getLogReader();
+  }
+
+  @Test
+  void testGetLog() {
+    // Given
+    PodResource<Pod> p1 = Mockito.mock(PodResource.class, Mockito.RETURNS_DEEP_STUBS);
+    PodResource<Pod> p2 = Mockito.mock(PodResource.class, Mockito.RETURNS_DEEP_STUBS);
+    when(p1.getLog(anyBoolean())).thenReturn("p1-log");
+    when(p2.getLog(anyBoolean())).thenReturn("p2-log");
+
+    // When
+    String result = PodOperationUtil.getLog(createMockPodResourceList(p1, p2), false);
+
+    // Then
+    assertThat(result).isNotNull().isEqualTo("p1-logp2-log");
+    verify(p1, times(1)).getLog(false);
+    verify(p2, times(1)).getLog(false);
+  }
+
   private PodList getMockPodList(String controllerUid) {
     return new PodListBuilder()
       .addToItems(
@@ -138,90 +207,20 @@ class PodOperationUtilTest {
   }
 
   private FilterWatchListDeletable<Pod, PodList> getMockPodFilterOperation(String controllerUid) {
-    return new FilterWatchListDeletable<Pod, PodList>() {
+    FilterWatchListDeletable<Pod, PodList> result = Mockito.mock(FilterWatchListDeletable.class);
+    Mockito.when(result.list()).then(new Answer<PodList>() {
       @Override
-      public EditReplacePatchDeletable<Pod> withPropagationPolicy(DeletionPropagation propagationPolicy) { return null; }
+      public PodList answer(InvocationOnMock invocation) throws Throwable {
+        return getMockPodList(controllerUid);
+      }
+    });
+    return result;
+  }
 
-      @Override
-      public Deletable withGracePeriod(long gracePeriodSeconds) { return null; }
-
-      @Override
-      public Boolean delete() { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withLabels(Map<String, String> labels) { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withoutLabels(Map<String, String> labels) { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withLabelIn(String key, String... values) { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withLabelNotIn(String key, String... values) { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withLabel(String key, String value) { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withLabel(String key) { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withoutLabel(String key, String value) { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withoutLabel(String key) { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withFields(Map<String, String> labels) { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withField(String key, String value) { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withoutFields(Map<String, String> fields) { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withoutField(String key, String value) { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withLabelSelector(LabelSelector selector) { return null; }
-
-      @Override
-      public FilterWatchListDeletable<Pod, PodList> withInvolvedObject(ObjectReference objectReference) { return null; }
-
-      @Override
-      public PodList list() { return getMockPodList(controllerUid); }
-
-      @Override
-      public PodList list(Integer limitVal, String continueVal) { return null; }
-
-      @Override
-      public PodList list(ListOptions listOptions) { return null; }
-
-      @Override
-      public Pod updateStatus(Pod item) { return null; }
-
-      @Override
-      public WatchAndWaitable<Pod> withResourceVersion(String resourceVersion) { return null; }
-
-      @Override
-      public Pod waitUntilReady(long amount, TimeUnit timeUnit) { return null; }
-
-      @Override
-      public Pod waitUntilCondition(Predicate<Pod> condition, long amount, TimeUnit timeUnit) { return null; }
-
-      @Override
-      public Waitable<Pod, Pod> withWaitRetryBackoff(long initialBackoff, TimeUnit backoffUnit, double backoffMultiplier) { return null; }
-
-      @Override
-      public Watch watch(Watcher<Pod> watcher) { return null; }
-
-      @Override
-      public Watch watch(ListOptions options, Watcher<Pod> watcher) { return null; }
-
-      @Override
-      public Watch watch(String resourceVersion, Watcher<Pod> watcher) { return null; }
-    };
+  @SafeVarargs
+  private final List<PodResource<Pod>> createMockPodResourceList(PodResource<Pod>... podResources) {
+    List<PodResource<Pod>> podResourceList = new ArrayList<>();
+    Collections.addAll(podResourceList, podResources);
+    return podResourceList;
   }
 }

@@ -15,7 +15,6 @@
  */
 package io.fabric8.kubernetes.client.dsl.internal.apps.v1;
 
-import io.fabric8.kubernetes.api.builder.Visitor;
 import io.fabric8.kubernetes.api.model.Container;
 import io.fabric8.kubernetes.api.model.HasMetadata;
 import io.fabric8.kubernetes.api.model.Pod;
@@ -23,7 +22,6 @@ import io.fabric8.kubernetes.api.model.Status;
 import io.fabric8.kubernetes.api.model.apps.ControllerRevision;
 import io.fabric8.kubernetes.api.model.apps.ControllerRevisionList;
 import io.fabric8.kubernetes.api.model.apps.StatefulSet;
-import io.fabric8.kubernetes.api.model.apps.StatefulSetBuilder;
 import io.fabric8.kubernetes.api.model.apps.StatefulSetList;
 import io.fabric8.kubernetes.api.model.extensions.DeploymentRollback;
 import io.fabric8.kubernetes.client.Config;
@@ -38,6 +36,8 @@ import io.fabric8.kubernetes.client.dsl.base.OperationContext;
 import io.fabric8.kubernetes.client.utils.PodOperationUtil;
 import io.fabric8.kubernetes.client.dsl.internal.RollingOperationContext;
 import okhttp3.OkHttpClient;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -169,19 +169,14 @@ public class StatefulSetOperationsImpl extends RollableScalableResourceOperation
   }
 
   public String getLog(Boolean isPretty) {
-    StringBuilder stringBuilder = new StringBuilder();
-    List<PodResource<Pod>> podOperationList = doGetLog(isPretty);
-    for (PodResource<Pod> podOperation : podOperationList) {
-      stringBuilder.append(podOperation.getLog(isPretty));
-    }
-    return stringBuilder.toString();
+    return PodOperationUtil.getLog(doGetLog(isPretty), isPretty);
   }
 
   private List<PodResource<Pod>> doGetLog(boolean isPretty) {
-    StatefulSet statefulSet = fromServer().get();
+    StatefulSet statefulSet = requireFromServer();
 
     return PodOperationUtil.getPodOperationsForController(context, statefulSet.getMetadata().getUid(),
-      getStatefulSetSelectorLabels(statefulSet), isPretty, podLogWaitTimeout);
+      getStatefulSetSelectorLabels(statefulSet), isPretty, podLogWaitTimeout, ((RollingOperationContext)context).getContainerId());
   }
 
   /**
@@ -190,13 +185,7 @@ public class StatefulSetOperationsImpl extends RollableScalableResourceOperation
    */
   @Override
   public Reader getLogReader() {
-    List<PodResource<Pod>> podResources = doGetLog(false);
-    if (podResources.size() > 1) {
-      throw new KubernetesClientException("Reading logs is not supported for multicontainer jobs");
-    } else if (podResources.size() == 1) {
-      return podResources.get(0).getLogReader();
-    }
-    return null;
+    return PodOperationUtil.getLogReader(doGetLog(false));
   }
 
   @Override
@@ -206,13 +195,7 @@ public class StatefulSetOperationsImpl extends RollableScalableResourceOperation
 
   @Override
   public LogWatch watchLog(OutputStream out) {
-    List<PodResource<Pod>> podResources = doGetLog(false);
-    if (podResources.size() > 1) {
-      throw new KubernetesClientException("Watching logs is not supported for multicontainer jobs");
-    } else if (podResources.size() == 1) {
-      return podResources.get(0).watchLog(out);
-    }
-    return null;
+    return PodOperationUtil.watchLog(doGetLog(false), out);
   }
 
   @Override
@@ -261,11 +244,6 @@ public class StatefulSetOperationsImpl extends RollableScalableResourceOperation
     return sendPatchedStatefulSetData(previousControllerRevision.getData());
   }
 
-  @Override
-  public StatefulSet edit(Visitor... visitors) {
-    return patch(new StatefulSetBuilder(getMandatory()).accept(visitors).build());
-  }
-
   private StatefulSet sendPatchedStatefulSet(Map<String, Object> patchedUpdate) {
     StatefulSet oldStatefulSet = get();
     try {
@@ -294,5 +272,10 @@ public class StatefulSetOperationsImpl extends RollableScalableResourceOperation
       labels.putAll(statefulSet.getSpec().getTemplate().getMetadata().getLabels());
     }
     return labels;
+  }
+
+  @Override
+  public Loggable<LogWatch> inContainer(String id) {
+    return newInstance(((RollingOperationContext) context).withContainerId(id));
   }
 }
